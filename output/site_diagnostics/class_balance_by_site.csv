@@ -1,0 +1,10 @@
+site,n,n_adhd,adhd_rate,n_control
+KKI,82,22,0.268,60
+NYU,252,144,0.571,108
+NeuroIMAGE,73,36,0.493,37
+OHSU,101,41,0.406,60
+Peking_1,135,47,0.348,88
+Peking_2,67,35,0.522,32
+Peking_3,40,18,0.45,22
+Pittsburgh,86,4,0.047,82
+WashU,60,0,0.0,60
