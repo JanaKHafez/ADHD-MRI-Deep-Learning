@@ -28,7 +28,7 @@ WEIGHT_PATH   = r"pretrained_models\BrainIAC.ckpt"
 # - "SFCN": Simple Fully Convolutional Network (specialised for brain age/classification).
 # - "AnatCL": Contrastive learning model pre-trained on diverse brain MRIs.
 # - "BrainIAC": ViT-B foundation model pre-trained on 32,000 brain MRIs.
-CHOSEN_MODEL       = "BrainIAC"  
+CHOSEN_MODEL       = "AnatCL"  
 
 # NUM_CLASSES: Binary classification (0 = Control/TD, 1 = ADHD).
 NUM_CLASSES        = 2
