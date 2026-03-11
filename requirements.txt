@@ -1,0 +1,31 @@
+kagglehub
+seaborn
+plotly
+imageio
+kaleido
+torchaudio
+nilearn
+
+# Core Deep Learning
+torch>=2.0.0
+torchvision
+monai[all]>=1.2.0
+
+# Neuroimaging & Data Processing
+nibabel>=5.0.0
+numpy>=1.23.0
+pandas>=1.5.0
+scipy>=1.10.0
+scikit-learn>=1.2.0
+
+# Visualization
+matplotlib>=3.7.0
+tensorboard>=2.12.0
+
+# Pre-segmentation (SynthSeg Dependencies)
+# Note: If running the standalone Python version of SynthSeg
+torchio>=0.18.90
+
+tensorflow
+scikit-image 
+tqdm
