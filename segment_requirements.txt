@@ -1,0 +1,25 @@
+# --- Core Deep Learning Frameworks ---
+# PyTorch for Training and Saliency Mapping
+torch>=2.0.0
+torchvision
+# MONAI for Medical Imaging Transforms and Grad-CAM
+monai[all]>=1.2.0
+
+# --- Compatibility Bridge (CRITICAL) ---
+# SynthSeg requires np.int/np.float which were removed in 1.24+
+numpy==1.23.5
+
+# --- Neuroimaging & Data Handling ---
+nibabel>=5.0.0
+pandas>=1.5.0
+scipy>=1.10.0
+scikit-learn>=1.2.0
+
+# --- SynthSeg Standalone Dependencies ---
+# These are required by the SynthSeg repository logic
+tensorflow>=2.10.0
+torchio>=0.18.90
+h5py>=3.8.0
+
+# --- Visualization ---
+matplotlib>=3.6.2
