@@ -1,3 +1,32 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:298db76f246c82fdad43a8aa513c2121e8e5e890f62993bbf2b683db5cf36561
-size 1500
+Region,SaliencyVoxels,SaliencyVolume_mm3,RegionVolume_mm3,VolumeNormImportance%
+Right-Cerebral-White-Matter,36532,149311.86,228928.9,65.22
+Left-Cerebral-White-Matter,36975,151122.46,235066.88,64.29
+Brain-Stem,3211,13123.85,20865.77,62.9
+Left-Ventral-DC,626,2558.56,4197.91,60.95
+Right-Cerebellum-Cortex,8345,34107.29,56460.17,60.41
+Left-Cerebellum-White-Matter,2760,11280.54,18750.87,60.16
+Right-Cerebellum-White-Matter,2744,11215.15,18715.09,59.93
+Left-Cerebellum-Cortex,8103,33118.2,55833.6,59.32
+Right-Ventral-DC,596,2435.94,4116.73,59.17
+Left-Amygdala,251,1025.88,1818.19,56.42
+Right-Amygdala,261,1066.75,1925.45,55.4
+Right-Thalamus,965,3944.1,7266.23,54.28
+Left-Thalamus,1026,4193.42,7745.43,54.14
+Right-Cerebral-Cortex,36165,147811.87,277979.56,53.17
+Left-Pallidum,210,858.3,1624.51,52.83
+Left-Cerebral-Cortex,36013,147190.62,283893.3,51.85
+Right-Caudate,497,2031.31,4008.12,50.68
+Right-Pallidum,191,780.65,1541.45,50.64
+Right-Hippocampus,535,2186.63,4605.03,47.48
+Left-Caudate,475,1941.4,4162.97,46.63
+Left-Hippocampus,489,1998.62,4355.1,45.89
+Right-Putamen,579,2366.46,5816.1,40.69
+Left-Putamen,594,2427.77,6088.93,39.87
+Left-Accumbens-Area,66,269.75,753.19,35.81
+Right-Accumbens-Area,63,257.49,729.74,35.29
+Left-Lateral-Ventricle,389,1589.9,5847.7,27.19
+3rd-Ventricle,65,265.66,1003.12,26.48
+Right-Lateral-Ventricle,357,1459.11,5677.67,25.7
+4th-Ventricle,162,662.12,2745.17,24.12
+Left-Inferior-Lateral-Ventricle,40,163.49,813.74,20.09
+Right-Inferior-Lateral-Ventricle,28,114.44,731.66,15.64

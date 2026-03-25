@@ -1,3 +1,2 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ed126b48094f313ed3c5caf1522da5014e28a512a1862fe29b15dcf7f1549da6
-size 234
+Val AUC,Val Accuracy,Test AUC,Test Accuracy,Sensitivity,Specificity,TP,TN,FP,FN,ntrain,nval,ntest
+0.6924522392734106,0.5272727272727272,0.5998498498498499,0.547945205479452,0.7222222222222222,0.3783783783783784,26,14,23,10,658,165,73

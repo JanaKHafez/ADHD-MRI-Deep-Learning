@@ -28,7 +28,7 @@ WEIGHT_PATH   = r"pretrained_models\BrainIAC.ckpt"
 # - "SFCN": Simple Fully Convolutional Network (specialised for brain age/classification).
 # - "AnatCL": Contrastive learning model pre-trained on diverse brain MRIs.
 # - "BrainIAC": ViT-B foundation model pre-trained on 32,000 brain MRIs.
-CHOSEN_MODEL       = "AnatCL"  
+CHOSEN_MODEL       = "ResNet18"  
 
 # NUM_CLASSES: Binary classification (0 = Control/TD, 1 = ADHD).
 NUM_CLASSES        = 2
@@ -104,7 +104,7 @@ AUG_SMOOTH_SIGMA      = (0.25, 0.5) # Smoothing kernel size.
 
 # ── Training ──────────────────────────────────────────────────────────────────
 # EPOCHS: Maximum number of times the model will see the entire dataset.
-EPOCHS           = 200      
+EPOCHS           = 100      
 # BATCH_SIZE: Number of 3D MRIs processed simultaneously. 3D images are massive,
 # so this is usually kept very small (2 to 8) to avoid "CUDA Out of Memory" errors.
 BATCH_SIZE       = 4
@@ -112,7 +112,7 @@ BATCH_SIZE       = 4
 NUM_WORKERS      = 2
 # LEARNING_RATE: How large of a step the optimizer takes when updating weights.
 # Defult = 1e-5
-LEARNING_RATE    = 5e-4
+LEARNING_RATE    = 5e-6
 # WEIGHT_DECAY: L2 Regularization term (AdamW). Penalises excessively large weights,
 # forcing the network to rely on multiple subtle features rather than one loud noise artifact.
 WEIGHT_DECAY     = 1e-2
@@ -122,8 +122,8 @@ WEIGHT_DECAY     = 1e-2
 # generic edges/shapes) and only "unfreeze" (train) the deeper layers and the final
 # classification head to adapt to our specific ADHD task.
 SFCN_FROZEN_BLOCKS      = list(range(4))             # Freezes blocks 0, 1, 2, and 3.
-ANATCL_TRAINABLE_LAYERS = ["layer4", "fc"]           # Only trains the last convolutional block and fully connected layer.
-RESNET_TRAINABLE_LAYERS = ["layer3", "layer4", "fc"] # Trains the deeper halves.
+ANATCL_TRAINABLE_LAYERS = ["backbone.encoder.layer3", "backbone.encoder.layer4", "backbone.head"]           # Only trains the last convolutional block and fully connected layer.
+RESNET_TRAINABLE_LAYERS = ["layer4", "fc"]           # Trains only these layers.
 ANATCL_FOLD             = 0                          # Specific pre-trained fold for AnatCL.
 ANATCL_DESCRIPTOR       = "global"                   # Specific feature descriptor type for AnatCL.
 # BRAINIAC_UNFREEZE_MODE: Controls which blocks are unfrozen.
@@ -134,7 +134,7 @@ ANATCL_DESCRIPTOR       = "global"                   # Specific feature descript
 BRAINIAC_UNFREEZE_MODE  = "last3"
 # BRAINIAC_BACKBONE_LR: Separate LR for unfrozen backbone blocks (should be << head LR).
 # Only used when BRAINIAC_UNFREEZE_MODE != "linear_probe".
-BRAINIAC_BACKBONE_LR    = 5e-5
+BRAINIAC_BACKBONE_LR    = 1e-5
 
 # ── Visualisation & Interpretability ──────────────────────────────────────────
 # HEATMAP_ALPHA: Transparency of the Grad-CAM overlay when plotting (0.0 to 1.0).
@@ -735,6 +735,10 @@ def main():
 
     # [5] Training
     model        = get_model(CHOSEN_MODEL, device)
+
+    print("[DEBUG]")
+    for name, _ in model.named_modules():
+        print(name)
     
     if USE_CLASS_WEIGHTS:
         class_counts_all = np.bincount(labels_array)
@@ -757,10 +761,6 @@ def main():
             filter(lambda p: p.requires_grad, model.parameters()),
             lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
         )
-
-    print("[DEBUG]")
-    for name, _ in model.named_modules():
-        print(name)
 
     if SCHEDULER_TYPE == "Plateau":
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=SCHEDULER_FACTOR, patience=SCHEDULER_PATIENCE)

@@ -6,3 +6,6 @@ src/DL_2.ipynb
 src/DL_3.ipynb
 src/DL.ipynb
 src/DL_original.ipynb
+runs/**/*.pth
+*.zip
+ADHD_BIDS/
