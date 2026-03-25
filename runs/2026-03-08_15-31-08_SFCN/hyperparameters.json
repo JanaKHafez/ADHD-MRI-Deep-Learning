@@ -1,3 +1,70 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:2dc93f958babeb0f25ebd86cc8108374d2c0ad52cf1b6755ae0e58c447f25b1f
-size 1474
+{
+    "BIDS_ROOT": "ADHD_BIDS",
+    "RUNS_DIR": "runs",
+    "WEIGHT_PATH": "pretrained_models\\SFCN_age.p",
+    "CHOSEN_MODEL": "SFCN",
+    "NUM_CLASSES": 2,
+    "LABEL_COLUMN": "label",
+    "TARGET_SIZE": [
+        121,
+        128,
+        121
+    ],
+    "VAL_SPLIT": 0.2,
+    "TEST_SPLIT": 0.1,
+    "RANDOM_STATE": 42,
+    "USE_SITE_HOLDOUT": true,
+    "HOLDOUT_SITE": "Peking_3",
+    "USE_CACHE_DATASET": true,
+    "FIND_OPTIMAL_THRESHOLD": false,
+    "EARLY_STOPPING_PATIENCE": 25,
+    "SCHEDULER_TYPE": "Plateau",
+    "SCHEDULER_PATIENCE": 10,
+    "SCHEDULER_FACTOR": 0.5,
+    "USE_CLASS_WEIGHTS": false,
+    "AUG_AFFINE_PROB": 0.3,
+    "AUG_AFFINE_ROTATE": [
+        0.03,
+        0.03,
+        0.03
+    ],
+    "AUG_AFFINE_TRANSLATE": [
+        2,
+        2,
+        2
+    ],
+    "AUG_NOISE_PROB": 0.2,
+    "AUG_NOISE_STD": 0.03,
+    "AUG_SMOOTH_PROB": 0.15,
+    "AUG_SMOOTH_SIGMA": [
+        0.25,
+        0.5
+    ],
+    "EPOCHS": 100,
+    "BATCH_SIZE": 4,
+    "NUM_WORKERS": 2,
+    "LEARNING_RATE": 1e-05,
+    "WEIGHT_DECAY": 0.01,
+    "SCHEDULER_T_MAX": 10,
+    "SFCN_FROZEN_BLOCKS": [
+        0,
+        1,
+        2,
+        3
+    ],
+    "ANATCL_TRAINABLE_LAYERS": [
+        "layer4",
+        "fc"
+    ],
+    "RESNET_TRAINABLE_LAYERS": [
+        "layer3",
+        "layer4",
+        "fc"
+    ],
+    "ANATCL_FOLD": 0,
+    "ANATCL_DESCRIPTOR": "global",
+    "HEATMAP_ALPHA": 0.5,
+    "HEATMAP_CMAP": "jet",
+    "SAVE_DPI": 150,
+    "GRADCAM_LAYER": "features.5.2"
+}

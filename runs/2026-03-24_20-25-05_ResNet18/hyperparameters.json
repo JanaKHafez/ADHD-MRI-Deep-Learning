@@ -1,0 +1,74 @@
+{
+    "run_timestamp": "2026-03-24_20-25-05",
+    "run_dir": "runs\\2026-03-24_20-25-05_ResNet18",
+    "BIDS_ROOT": "ADHD_BIDS",
+    "RUNS_DIR": "runs",
+    "WEIGHT_PATH": "pretrained_models\\BrainIAC.ckpt",
+    "CHOSEN_MODEL": "ResNet18",
+    "NUM_CLASSES": 2,
+    "LABEL_COLUMN": "label",
+    "TARGET_SIZE": [
+        121,
+        128,
+        121
+    ],
+    "VAL_SPLIT": 0.2,
+    "TEST_SPLIT": 0.1,
+    "RANDOM_STATE": 42,
+    "USE_SITE_HOLDOUT": true,
+    "HOLDOUT_SITE": "NeuroIMAGE",
+    "USE_CACHE_DATASET": true,
+    "FIND_OPTIMAL_THRESHOLD": false,
+    "EARLY_STOPPING_PATIENCE": 25,
+    "SCHEDULER_TYPE": "Cosine",
+    "SCHEDULER_PATIENCE": 10,
+    "SCHEDULER_FACTOR": 0.5,
+    "USE_CLASS_WEIGHTS": false,
+    "AUG_AFFINE_PROB": 0.3,
+    "AUG_AFFINE_ROTATE": [
+        0.03,
+        0.03,
+        0.03
+    ],
+    "AUG_AFFINE_TRANSLATE": [
+        2,
+        2,
+        2
+    ],
+    "AUG_NOISE_PROB": 0.2,
+    "AUG_NOISE_STD": 0.03,
+    "AUG_SMOOTH_PROB": 0.15,
+    "AUG_SMOOTH_SIGMA": [
+        0.25,
+        0.5
+    ],
+    "EPOCHS": 100,
+    "BATCH_SIZE": 4,
+    "NUM_WORKERS": 2,
+    "LEARNING_RATE": 5e-06,
+    "WEIGHT_DECAY": 0.01,
+    "SCHEDULER_T_MAX": 20,
+    "SFCN_FROZEN_BLOCKS": [
+        0,
+        1,
+        2,
+        3
+    ],
+    "ANATCL_TRAINABLE_LAYERS": [
+        "backbone.encoder.layer3",
+        "backbone.encoder.layer4",
+        "backbone.head"
+    ],
+    "RESNET_TRAINABLE_LAYERS": [
+        "layer4",
+        "fc"
+    ],
+    "ANATCL_FOLD": 0,
+    "ANATCL_DESCRIPTOR": "global",
+    "BRAINIAC_UNFREEZE_MODE": "last3",
+    "BRAINIAC_BACKBONE_LR": 1e-05,
+    "HEATMAP_ALPHA": 0.5,
+    "HEATMAP_CMAP": "jet",
+    "SAVE_DPI": 150,
+    "GRADCAM_LAYER": "layer4.1.conv2"
+}

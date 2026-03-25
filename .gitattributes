@@ -1,6 +1,5 @@
 ADHD_BIDS/ filter=lfs diff=lfs merge=lfs -text
 pretrained_models/* filter=lfs diff=lfs merge=lfs -text
 ADHD_BIDS/** filter=lfs diff=lfs merge=lfs -text
-runs/** filter=lfs diff=lfs merge=lfs -text
 runs/BrainIAC_best/best_BrainIAC.pth filter=lfs diff=lfs merge=lfs -text
 runs/ResNet18_best/best_ResNet18.pth filter=lfs diff=lfs merge=lfs -text
