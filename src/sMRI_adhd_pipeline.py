@@ -18,7 +18,7 @@ RUNS_DIR           = "runs"
 # Pretrained Weight Paths: Paths to locally downloaded checkpoint files.
 # Using pre-trained weights (Transfer Learning) significantly reduces training
 # time and improves accuracy on smaller medical datasets.
-WEIGHT_PATH   = r"pretrained_models\BrainIAC.ckpt"
+WEIGHT_PATH   = r"pretrained_models\resnet_18.pth"
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 # CHOSEN_MODEL: Toggles the neural network architecture.
@@ -112,7 +112,7 @@ BATCH_SIZE       = 4
 NUM_WORKERS      = 2
 # LEARNING_RATE: How large of a step the optimizer takes when updating weights.
 # Defult = 1e-5
-LEARNING_RATE    = 5e-6
+LEARNING_RATE    = 1e-4
 # WEIGHT_DECAY: L2 Regularization term (AdamW). Penalises excessively large weights,
 # forcing the network to rely on multiple subtle features rather than one loud noise artifact.
 WEIGHT_DECAY     = 1e-2
@@ -123,7 +123,7 @@ WEIGHT_DECAY     = 1e-2
 # classification head to adapt to our specific ADHD task.
 SFCN_FROZEN_BLOCKS      = list(range(4))             # Freezes blocks 0, 1, 2, and 3.
 ANATCL_TRAINABLE_LAYERS = ["backbone.encoder.layer3", "backbone.encoder.layer4", "backbone.head"]           # Only trains the last convolutional block and fully connected layer.
-RESNET_TRAINABLE_LAYERS = ["layer4", "fc"]           # Trains only these layers.
+RESNET_TRAINABLE_LAYERS = ["layer3", "layer4", "fc"]           # Trains only these layers.
 ANATCL_FOLD             = 0                          # Specific pre-trained fold for AnatCL.
 ANATCL_DESCRIPTOR       = "global"                   # Specific feature descriptor type for AnatCL.
 # BRAINIAC_UNFREEZE_MODE: Controls which blocks are unfrozen.
