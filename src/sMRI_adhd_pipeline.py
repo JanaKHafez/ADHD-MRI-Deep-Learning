@@ -18,7 +18,7 @@ RUNS_DIR           = "runs"
 # Pretrained Weight Paths: Paths to locally downloaded checkpoint files.
 # Using pre-trained weights (Transfer Learning) significantly reduces training
 # time and improves accuracy on smaller medical datasets.
-WEIGHT_PATH   = r"pretrained_models\resnet_18.pth"
+WEIGHT_PATH   = r"pretrained_models\BrainIAC.ckpt"
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 # CHOSEN_MODEL: Toggles the neural network architecture.
@@ -28,7 +28,7 @@ WEIGHT_PATH   = r"pretrained_models\resnet_18.pth"
 # - "SFCN": Simple Fully Convolutional Network (specialised for brain age/classification).
 # - "AnatCL": Contrastive learning model pre-trained on diverse brain MRIs.
 # - "BrainIAC": ViT-B foundation model pre-trained on 32,000 brain MRIs.
-CHOSEN_MODEL       = "ResNet18"  
+CHOSEN_MODEL       = "BrainIAC"  
 
 # NUM_CLASSES: Binary classification (0 = Control/TD, 1 = ADHD).
 NUM_CLASSES        = 2
@@ -83,6 +83,51 @@ SCHEDULER_T_MAX  = 20        # Number of epochs for a full cosine cycle (Cosine)
 # more heavily by weighting the CrossEntropyLoss inversely to class frequency.
 USE_CLASS_WEIGHTS = False
 
+# ── Loss Function ─────────────────────────────────────────────────────────────
+# LOSS_FUNCTION: Selects the training loss.
+# - "CrossEntropy": Standard cross-entropy loss (default). Pair with USE_CLASS_WEIGHTS for
+#   imbalanced data. Note: USE_CLASS_WEIGHTS is ignored when using Focal or WeightedCE directly.
+# - "FocalLoss": Down-weights easy examples so the model focuses on hard, misclassified
+#   ones. Very effective for class imbalance. Tuned by FOCAL_GAMMA and FOCAL_ALPHA.
+# - "WeightedCrossEntropy": CrossEntropy with explicit per-class weights derived from
+#   the inverse class frequency. A simpler alternative to Focal Loss for imbalance.
+LOSS_FUNCTION  = "FocalLoss"   # Options: "CrossEntropy" | "FocalLoss" | "WeightedCrossEntropy"
+# FOCAL_GAMMA: Focusing parameter (γ). Higher = more focus on hard examples.
+#   γ=0 → reduces to standard cross-entropy. Typical values: 1–5. Start with 2.
+FOCAL_GAMMA    = 2.0
+# FOCAL_ALPHA: Per-class weighting for Focal Loss (list of length NUM_CLASSES), or None
+#   to apply no per-class weighting. E.g. [0.75, 0.25] up-weights the minority class.
+FOCAL_ALPHA    = None
+
+# ── Dropout Regularization ────────────────────────────────────────────────────
+# DROPOUT_RATE: Probability of zeroing out a neuron during training. Applied to
+# the classification heads of ResNet, DenseNet, and BrainIAC models. Acts as a
+# strong regularizer against overfitting on small medical datasets.
+# Set to 0.0 to disable dropout entirely.
+DROPOUT_RATE   = 0.5
+
+# ── Extra Augmentation ────────────────────────────────────────────────────────
+# AUG_FLIP_PROB: Probability of randomly flipping the MRI along each spatial axis.
+# Left-right flips are neurologically plausible; you may wish to disable up-down/AP.
+AUG_FLIP_PROB            = 0.0   # Applied to all three axes independently.
+# AUG_INTENSITY_PROB/SCALE: Randomly scales the global MRI intensity by a factor
+# drawn from [1-SCALE, 1+SCALE]. Simulates gain differences across scanners.
+AUG_INTENSITY_PROB       = 0.0
+AUG_INTENSITY_SCALE      = 0.1   # ±10% intensity scale by default.
+# AUG_CONTRAST_PROB/GAMMA_RANGE: Applies random gamma correction (contrast change).
+# Simulates differences in MRI contrast settings.
+AUG_CONTRAST_PROB        = 0.0
+AUG_CONTRAST_GAMMA_RANGE = (0.8, 1.2)
+
+# ── Test-Time Augmentation (TTA) ──────────────────────────────────────────────
+# USE_TTA: If True, augments each test sample TTA_N_AUGMENTS times, runs the
+# model on every augmented copy, and averages the resulting softmax probabilities.
+# This reduces prediction variance and reliably improves AUC on small test sets.
+USE_TTA        = False
+# TTA_N_AUGMENTS: How many augmented copies to average. More = more stable
+# predictions but proportionally more inference time. 5–20 is a sensible range.
+TTA_N_AUGMENTS = 10
+
 # ── Augmentation (Conservative FSL style) ─────────────────────────────────────
 # Data augmentation creates artificial variations of the training images to make
 # the model robust. These specific values are kept "conservative" (very subtle)
@@ -112,7 +157,7 @@ BATCH_SIZE       = 4
 NUM_WORKERS      = 2
 # LEARNING_RATE: How large of a step the optimizer takes when updating weights.
 # Defult = 1e-5
-LEARNING_RATE    = 1e-4
+LEARNING_RATE    = 5e-5
 # WEIGHT_DECAY: L2 Regularization term (AdamW). Penalises excessively large weights,
 # forcing the network to rely on multiple subtle features rather than one loud noise artifact.
 WEIGHT_DECAY     = 1e-2
@@ -123,7 +168,7 @@ WEIGHT_DECAY     = 1e-2
 # classification head to adapt to our specific ADHD task.
 SFCN_FROZEN_BLOCKS      = list(range(4))             # Freezes blocks 0, 1, 2, and 3.
 ANATCL_TRAINABLE_LAYERS = ["backbone.encoder.layer3", "backbone.encoder.layer4", "backbone.head"]           # Only trains the last convolutional block and fully connected layer.
-RESNET_TRAINABLE_LAYERS = ["layer3", "layer4", "fc"]           # Trains only these layers.
+RESNET_TRAINABLE_LAYERS = ["layer4", "fc"]           # Trains only these layers.
 ANATCL_FOLD             = 0                          # Specific pre-trained fold for AnatCL.
 ANATCL_DESCRIPTOR       = "global"                   # Specific feature descriptor type for AnatCL.
 # BRAINIAC_UNFREEZE_MODE: Controls which blocks are unfrozen.
@@ -131,10 +176,10 @@ ANATCL_DESCRIPTOR       = "global"                   # Specific feature descript
 # - "last3":        Unfreeze blocks 9-11 + norm. Recommended starting point.
 # - "last6":        Unfreeze blocks 6-11 + norm. More capacity, needs more data.
 # - "full":         Unfreeze everything.
-BRAINIAC_UNFREEZE_MODE  = "last3"
+BRAINIAC_UNFREEZE_MODE  = "full"
 # BRAINIAC_BACKBONE_LR: Separate LR for unfrozen backbone blocks (should be << head LR).
 # Only used when BRAINIAC_UNFREEZE_MODE != "linear_probe".
-BRAINIAC_BACKBONE_LR    = 1e-5
+BRAINIAC_BACKBONE_LR    = 5e-6
 
 # ── Visualisation & Interpretability ──────────────────────────────────────────
 # HEATMAP_ALPHA: Transparency of the Grad-CAM overlay when plotting (0.0 to 1.0).
@@ -193,6 +238,7 @@ from monai.networks.nets.resnet import ResNetBlock
 from monai.transforms import (
     Compose, EnsureChannelFirstd, EnsureTyped,
     LoadImaged, NormalizeIntensityd, RandAffined,
+    RandFlipd, RandScaleIntensityd, RandAdjustContrastd,
     RandGaussianNoised, RandGaussianSmoothd, Resized,
 )
 from monai.visualize import GradCAM
@@ -230,6 +276,58 @@ except ImportError:
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
+class FocalLoss(nn.Module):
+    """
+    Focal Loss (Lin et al., 2017) for binary / multi-class classification.
+
+    Focal Loss reshapes the standard cross-entropy so that well-classified
+    (easy) examples contribute very little to the total loss, forcing the
+    model to focus its learning budget on hard, misclassified examples. This
+    is particularly useful for class-imbalanced datasets like ADHD vs. Control.
+
+    Formula per sample:  FL(p_t) = -α_t · (1 - p_t)^γ · log(p_t)
+      where p_t  = softmax probability of the *true* class
+            γ    = focusing parameter (FOCAL_GAMMA).  γ=0 → standard CE.
+            α_t  = optional per-class weight (FOCAL_ALPHA).
+
+    Args:
+        gamma (float): Focusing exponent γ ≥ 0.  Typical: 2.0.
+        alpha (list | None): Per-class weights of length num_classes, or None
+            for uniform weighting.  Example: [0.75, 0.25] to up-weight the
+            minority class (index 0 = Control, index 1 = ADHD).
+        reduction (str): 'mean' | 'sum' | 'none'.
+    """
+    def __init__(self, gamma=2.0, alpha=None, reduction="mean"):
+        super().__init__()
+        self.gamma     = gamma
+        self.reduction = reduction
+        if alpha is not None:
+            # Register as buffer so it moves with .to(device)
+            self.register_buffer("alpha", torch.tensor(alpha, dtype=torch.float))
+        else:
+            self.alpha = None
+
+    def forward(self, logits, targets):
+        # logits: (B, C),  targets: (B,) long
+        log_p  = nn.functional.log_softmax(logits, dim=1)           # (B, C)
+        log_pt = log_p.gather(1, targets.unsqueeze(1)).squeeze(1)   # (B,)
+        pt     = log_pt.exp()                                        # (B,)
+
+        focal_weight = (1.0 - pt) ** self.gamma                     # (B,)
+
+        if self.alpha is not None:
+            alpha_t = self.alpha.gather(0, targets)                 # (B,)
+            focal_weight = alpha_t * focal_weight
+
+        loss = -focal_weight * log_pt
+
+        if self.reduction == "mean":
+            return loss.mean()
+        elif self.reduction == "sum":
+            return loss.sum()
+        return loss
+
+
 class SFCN(nn.Module):
     def __init__(self, num_classes=2):
         super().__init__()
@@ -237,7 +335,7 @@ class SFCN(nn.Module):
             self._make_block(1, 32), self._make_block(32, 64), self._make_block(64, 128),
             self._make_block(128, 256), self._make_block(256, 256), self._make_block(256, 64, pool=False),
         )
-        self.classifier = nn.Sequential(nn.Dropout(p=0.5), nn.Conv3d(64, num_classes, kernel_size=1))
+        self.classifier = nn.Sequential(nn.Dropout(p=DROPOUT_RATE), nn.Conv3d(64, num_classes, kernel_size=1))
 
     def _make_block(self, in_ch, out_ch, pool=True):
         layers = [nn.Conv3d(in_ch, out_ch, kernel_size=3, padding=1), nn.BatchNorm3d(out_ch), nn.ReLU(inplace=False)]
@@ -285,7 +383,7 @@ class BrainIACClassifier(nn.Module):
         self.head = nn.Sequential(
             nn.Linear(768, 256),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(DROPOUT_RATE),
             nn.Linear(256, num_classes)
         )
 
@@ -370,6 +468,9 @@ def get_model(model_name, device):
             print(f"Loaded {len(new_state_dict)} MedicalNet weights.")
         for name, param in model.named_parameters():
             param.requires_grad = any(x in name for x in RESNET_TRAINABLE_LAYERS)
+        # Wrap the final FC layer with dropout for additional regularization
+        if DROPOUT_RATE > 0.0:
+            model.fc = nn.Sequential(nn.Dropout(p=DROPOUT_RATE), model.fc)
     
     elif model_name == "ResNet50":
         model = ResNet(block=ResNetBlock, layers=[3, 4, 6, 3], block_inplanes=[64, 128, 256, 512],
@@ -383,9 +484,15 @@ def get_model(model_name, device):
             print(f"Loaded {len(new_state_dict)} MedicalNet weights.")
         for name, param in model.named_parameters():
             param.requires_grad = any(x in name for x in RESNET_TRAINABLE_LAYERS)
+        # Wrap the final FC layer with dropout for additional regularization
+        if DROPOUT_RATE > 0.0:
+            model.fc = nn.Sequential(nn.Dropout(p=DROPOUT_RATE), model.fc)
 
     elif model_name == "DenseNet121":
         model = DenseNet121(spatial_dims=3, in_channels=1, out_channels=NUM_CLASSES).to(device)
+        # Wrap DenseNet's output layer with dropout
+        if DROPOUT_RATE > 0.0:
+            model.class_layers.out = nn.Sequential(nn.Dropout(p=DROPOUT_RATE), model.class_layers.out)
 
     elif model_name == "AnatCL":
         model = AnatCL(descriptor=ANATCL_DESCRIPTOR, fold=ANATCL_FOLD, pretrained=True).to(device)
@@ -608,6 +715,74 @@ def get_predictions(model, loader, device):
             t_ids.extend(batch["sub_id"])
     return np.array(t_true), np.array(t_probs), np.array(t_ids)
 
+# TTA augmentation pipeline — a lightweight stochastic transform applied at inference.
+# Uses the same config knobs as training augmentation; intensity/contrast transforms
+# deliberately excluded to avoid shifting the probability calibration.
+_tta_transforms = Compose([
+    RandAffined(keys=["image"], prob=AUG_AFFINE_PROB, rotate_range=AUG_AFFINE_ROTATE, translate_range=AUG_AFFINE_TRANSLATE),
+    RandFlipd(keys=["image"], prob=AUG_FLIP_PROB, spatial_axis=0),
+    RandFlipd(keys=["image"], prob=AUG_FLIP_PROB, spatial_axis=1),
+    RandFlipd(keys=["image"], prob=AUG_FLIP_PROB, spatial_axis=2),
+    RandGaussianNoised(keys=["image"], prob=AUG_NOISE_PROB, mean=0.0, std=AUG_NOISE_STD),
+    EnsureTyped(keys=["image"]),
+])
+
+def get_tta_predictions(model, loader, device, n_augments=TTA_N_AUGMENTS):
+    """
+    Test-Time Augmentation (TTA) inference.
+
+    For every sample the model is run n_augments times, each time on a
+    freshly stochastically augmented copy of the image.  The softmax
+    probabilities are averaged across augmentations, which reduces
+    prediction variance and typically improves AUC, particularly on
+    small test sets where a single-pass prediction can be noisy.
+
+    Args:
+        model      : trained nn.Module in eval() mode.
+        loader     : DataLoader yielding {"image", "label", "sub_id"} batches.
+        device     : torch.device.
+        n_augments : number of augmented passes per sample (TTA_N_AUGMENTS).
+
+    Returns:
+        t_true  (np.ndarray): ground-truth labels.
+        t_probs (np.ndarray): mean ADHD probability across all augmented passes.
+        t_ids   (np.ndarray): subject IDs.
+    """
+    t_true, t_ids = [], []
+    # Accumulate summed probabilities; divide by n_augments at the end
+    t_probs_sum = None
+
+    model.eval()
+    for aug_i in range(n_augments):
+        run_probs = []
+        for batch_i, batch in enumerate(loader):
+            # Apply TTA transforms to every image in the batch individually
+            aug_images = []
+            for img_tensor in batch["image"]:
+                aug_dict = _tta_transforms({"image": img_tensor})
+                aug_images.append(aug_dict["image"])
+            aug_batch = torch.stack(aug_images).to(device)
+
+            with torch.no_grad():
+                probs = torch.softmax(model(aug_batch), dim=1)[:, 1].cpu().numpy()
+            run_probs.extend(probs)
+
+            # Collect ground truth and IDs only on the first augmentation pass
+            if aug_i == 0:
+                t_true.extend(batch["label"].numpy())
+                t_ids.extend(batch["sub_id"])
+
+        run_probs = np.array(run_probs)
+        if t_probs_sum is None:
+            t_probs_sum = run_probs
+        else:
+            t_probs_sum += run_probs
+
+        print(f"  TTA pass {aug_i + 1}/{n_augments} complete.")
+
+    t_probs = t_probs_sum / n_augments
+    return np.array(t_true), t_probs, np.array(t_ids)
+
 # Helper function to plot and save prediction histograms
 def plot_output_histogram(true_labels, probs, save_path, title):
     plt.figure(figsize=(8, 5), facecolor="white")
@@ -672,6 +847,11 @@ def main():
         Resized(keys=["image"], spatial_size=TARGET_SIZE, mode="trilinear"),
         NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
         RandAffined(keys=["image"], prob=AUG_AFFINE_PROB, rotate_range=AUG_AFFINE_ROTATE, translate_range=AUG_AFFINE_TRANSLATE),
+        RandFlipd(keys=["image"], prob=AUG_FLIP_PROB, spatial_axis=0),   # Left-Right flip (neurologically plausible)
+        RandFlipd(keys=["image"], prob=AUG_FLIP_PROB, spatial_axis=1),   # Anterior-Posterior flip
+        RandFlipd(keys=["image"], prob=AUG_FLIP_PROB, spatial_axis=2),   # Superior-Inferior flip
+        RandScaleIntensityd(keys=["image"], factors=AUG_INTENSITY_SCALE, prob=AUG_INTENSITY_PROB),
+        RandAdjustContrastd(keys=["image"], prob=AUG_CONTRAST_PROB, gamma=AUG_CONTRAST_GAMMA_RANGE),
         RandGaussianNoised(keys=["image"], prob=AUG_NOISE_PROB, mean=0.0, std=AUG_NOISE_STD),
         RandGaussianSmoothd(keys=["image"], prob=AUG_SMOOTH_PROB, sigma_x=AUG_SMOOTH_SIGMA, sigma_y=AUG_SMOOTH_SIGMA, sigma_z=AUG_SMOOTH_SIGMA),
         EnsureTyped(keys=["image"]),
@@ -740,14 +920,35 @@ def main():
     for name, _ in model.named_modules():
         print(name)
     
-    if USE_CLASS_WEIGHTS:
+    if LOSS_FUNCTION == "FocalLoss":
+        # Focal Loss: down-weights easy examples, focuses on hard misclassifications.
+        # Best for imbalanced datasets. Tune FOCAL_GAMMA (2.0 is a good start)
+        # and optionally FOCAL_ALPHA e.g. [0.75, 0.25] to further up-weight ADHD class.
+        alpha_arg = FOCAL_ALPHA  # None → uniform; [w0, w1] → per-class weights
+        loss_fn = FocalLoss(gamma=FOCAL_GAMMA, alpha=alpha_arg).to(device)
+        print(f"Using FocalLoss (gamma={FOCAL_GAMMA}, alpha={alpha_arg})")
+
+    elif LOSS_FUNCTION == "WeightedCrossEntropy":
+        # Weighted Cross-Entropy: explicitly up-weights the minority class by
+        # inverse class frequency across the ENTIRE dataset (train+val+test labels).
         class_counts_all = np.bincount(labels_array)
         cw = torch.tensor(1.0 / class_counts_all, dtype=torch.float).to(device)
         cw = cw / cw.sum()  # normalise so weights sum to 1
         loss_fn = nn.CrossEntropyLoss(weight=cw)
-        print(f"Using class weights: {cw.cpu().numpy()} (Control={cw[0]:.4f}, ADHD={cw[1]:.4f})")
+        print(f"Using WeightedCrossEntropy: {cw.cpu().numpy()} (Control={cw[0]:.4f}, ADHD={cw[1]:.4f})")
+
     else:
-        loss_fn = nn.CrossEntropyLoss() 
+        # Standard CrossEntropy (default).
+        # Optionally add class weights via the legacy USE_CLASS_WEIGHTS flag.
+        if USE_CLASS_WEIGHTS:
+            class_counts_all = np.bincount(labels_array)
+            cw = torch.tensor(1.0 / class_counts_all, dtype=torch.float).to(device)
+            cw = cw / cw.sum()
+            loss_fn = nn.CrossEntropyLoss(weight=cw)
+            print(f"Using CrossEntropy with class weights: {cw.cpu().numpy()} (Control={cw[0]:.4f}, ADHD={cw[1]:.4f})")
+        else:
+            loss_fn = nn.CrossEntropyLoss()
+            print("Using standard CrossEntropyLoss.")
            
     if CHOSEN_MODEL == "BrainIAC" and (BRAINIAC_UNFREEZE_MODE != "linear_probe"):
         optimizer = torch.optim.AdamW([
@@ -889,6 +1090,17 @@ def main():
         "SCHEDULER_PATIENCE": SCHEDULER_PATIENCE,
         "SCHEDULER_FACTOR": SCHEDULER_FACTOR,
         "USE_CLASS_WEIGHTS": USE_CLASS_WEIGHTS,
+        "LOSS_FUNCTION": LOSS_FUNCTION,
+        "FOCAL_GAMMA": FOCAL_GAMMA,
+        "FOCAL_ALPHA": FOCAL_ALPHA,
+        "DROPOUT_RATE": DROPOUT_RATE,
+        "AUG_FLIP_PROB": AUG_FLIP_PROB,
+        "AUG_INTENSITY_PROB": AUG_INTENSITY_PROB,
+        "AUG_INTENSITY_SCALE": AUG_INTENSITY_SCALE,
+        "AUG_CONTRAST_PROB": AUG_CONTRAST_PROB,
+        "AUG_CONTRAST_GAMMA_RANGE": AUG_CONTRAST_GAMMA_RANGE,
+        "USE_TTA": USE_TTA,
+        "TTA_N_AUGMENTS": TTA_N_AUGMENTS,
 
         # Augmentation
         "AUG_AFFINE_PROB": AUG_AFFINE_PROB,
@@ -989,7 +1201,13 @@ def main():
     plot_output_histogram(train_true, train_probs, os.path.join(run_dir, "train_histogram.png"), "Training Set Predictions")
 
     # 2. Evaluate Val Set
-    val_true, val_probs, val_ids_arr = get_predictions(model, val_loader, device)
+    # Threshold optimisation is done on val; run TTA here too so the threshold
+    # is tuned on the same probability space as the test predictions.
+    if USE_TTA:
+        print(f"\nRunning Test-Time Augmentation ({TTA_N_AUGMENTS} passes) on Val Set...")
+        val_true, val_probs, val_ids_arr = get_tta_predictions(model, val_loader, device, n_augments=TTA_N_AUGMENTS)
+    else:
+        val_true, val_probs, val_ids_arr = get_predictions(model, val_loader, device)
     
     if FIND_OPTIMAL_THRESHOLD:
         fpr, tpr, thresholds = roc_curve(val_true, val_probs)
@@ -1005,7 +1223,14 @@ def main():
     plot_output_histogram(val_true, val_probs, os.path.join(run_dir, "val_histogram.png"), "Validation Set Predictions")
 
     # 3. Evaluate Test Set
-    t_true, t_probs, t_ids_arr = get_predictions(model, test_loader, device)
+    # TTA: run the model TTA_N_AUGMENTS times on stochastically augmented copies
+    # of each test image and average the resulting softmax probabilities. This
+    # reduces prediction variance at no training cost. Disable with USE_TTA=False.
+    if USE_TTA:
+        print(f"\nRunning Test-Time Augmentation ({TTA_N_AUGMENTS} passes) on Test Set...")
+        t_true, t_probs, t_ids_arr = get_tta_predictions(model, test_loader, device, n_augments=TTA_N_AUGMENTS)
+    else:
+        t_true, t_probs, t_ids_arr = get_predictions(model, test_loader, device)
     
     # Apply the threshold we just calculated (or defaulted to 0.5)
     t_preds = (t_probs > optimal_threshold).astype(int)
@@ -1013,7 +1238,8 @@ def main():
     test_acc = np.mean(t_preds == t_true)
     
     pd.DataFrame({"sub_id": t_ids_arr, "true_label": t_true, "pred_prob": t_probs, "pred_label": t_preds}).to_csv(os.path.join(run_dir, "test_predictions.csv"), index=False)
-    plot_output_histogram(t_true, t_probs, os.path.join(run_dir, "test_histogram.png"), "Test Set Predictions")
+    tta_label = "Test Set Predictions (TTA)" if USE_TTA else "Test Set Predictions"
+    plot_output_histogram(t_true, t_probs, os.path.join(run_dir, "test_histogram.png"), tta_label)
 
     # ══════════════════════════════════════════════════════════════════════════════
     # Group Anatomical Analysis — all four outcome types (TP, TN, FP, FN)
