@@ -63,6 +63,10 @@ USE_CACHE_DATASET       = True
 # FIND_OPTIMAL_THRESHOLD: If True, uses Youden's J statistic on the validation ROC
 # curve to find the best cut-off probability (instead of defaulting to > 0.5).
 FIND_OPTIMAL_THRESHOLD  = False      
+# THRESHOLD_TUNING_METRIC: objective used to pick the validation threshold.
+# - "f1": best for imbalanced binary classes (recommended here).
+# - "youden_j": maximises TPR-FPR on ROC.
+THRESHOLD_TUNING_METRIC = "youden_j"
 
 # EARLY_STOPPING_PATIENCE: Halts training if the Validation AUC doesn't improve
 # for this many epochs, preventing the model from memorising the training set (overfitting).
@@ -81,9 +85,23 @@ SCHEDULER_T_MAX  = 20        # Number of epochs for a full cosine cycle (Cosine)
 
 # USE_CLASS_WEIGHTS: If True, penalises misclassification of the minority class
 # more heavily by weighting the CrossEntropyLoss inversely to class frequency.
+# Use plain CrossEntropyLoss (original ResNet objective)
 USE_CLASS_WEIGHTS = False
+# LOSS_TYPE: choose from 'cross_entropy', 'weighted_cross_entropy', 'focal'
+LOSS_TYPE = "cross_entropy"
+# Focal loss hyperparameters (used when LOSS_TYPE == 'focal')
+FOCAL_GAMMA = 2.0
+# FOCAL_ALPHA can be None (no class balancing), a scalar (applied to the positive class
+# for binary tasks), or a list/tensor of per-class weights matching NUM_CLASSES.
+# Recommended starting value for imbalanced binary problems: 0.25
+FOCAL_ALPHA = 0.25
 
 # ── Augmentation (Conservative FSL style) ─────────────────────────────────────
+# AUG_PRESET: controls augmentation strength for experiments.
+# - "conservative": very light perturbations (baseline-like).
+# - "moderate": stronger but realistic MRI perturbations.
+# - "strong": aggressive stress-test setting.
+AUG_PRESET            = "moderate"
 # Data augmentation creates artificial variations of the training images to make
 # the model robust. These specific values are kept "conservative" (very subtle)
 # because brains pre-processed by FSL are already supposed to be aligned and standardized.
@@ -107,9 +125,15 @@ AUG_SMOOTH_SIGMA      = (0.25, 0.5) # Smoothing kernel size.
 EPOCHS           = 100      
 # BATCH_SIZE: Number of 3D MRIs processed simultaneously. 3D images are massive,
 # so this is usually kept very small (2 to 8) to avoid "CUDA Out of Memory" errors.
-BATCH_SIZE       = 4
+BATCH_SIZE       = 2
+# EVAL_BATCH_SIZE: Validation/Test batch size can be lower than training to avoid
+# OOM during full-volume inference on smaller GPUs.
+EVAL_BATCH_SIZE  = 1
 # NUM_WORKERS: Number of CPU threads dedicated to loading and augmenting data.
 NUM_WORKERS      = 2
+# USE_AMP: Mixed precision on CUDA (float16 autocast + GradScaler) to reduce
+# memory usage and often improve throughput.
+USE_AMP          = True
 # LEARNING_RATE: How large of a step the optimizer takes when updating weights.
 # Defult = 1e-5
 LEARNING_RATE    = 1e-4
@@ -162,6 +186,7 @@ else:
 if TEST:
     EPOCHS = 1
     BATCH_SIZE = 2
+    EVAL_BATCH_SIZE = 1
     NUM_WORKERS = 0
     USE_SITE_HOLDOUT = False
     VAL_SPLIT = 0.2
@@ -174,6 +199,8 @@ import shutil
 from datetime import datetime
 import multiprocessing
 
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import json
 import matplotlib.pyplot as plt
 import numpy as np
@@ -182,7 +209,7 @@ import torch
 import torch.nn as nn
 import nibabel as nib
 from scipy.ndimage import gaussian_filter, zoom
-from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix, ConfusionMatrixDisplay, f1_score
 from sklearn.model_selection import train_test_split
 from torch.utils.data import WeightedRandomSampler
 
@@ -193,7 +220,8 @@ from monai.networks.nets.resnet import ResNetBlock
 from monai.transforms import (
     Compose, EnsureChannelFirstd, EnsureTyped,
     LoadImaged, NormalizeIntensityd, RandAffined,
-    RandGaussianNoised, RandGaussianSmoothd, Resized,
+    RandGaussianNoised, RandGaussianSmoothd, RandFlipd,
+    RandScaleIntensityd, RandShiftIntensityd, Resized,
 )
 from monai.visualize import GradCAM
 
@@ -354,6 +382,55 @@ class BrainIACAttentionSaliency:
         sal = np.maximum(sal, 0)
         sal /= (sal.max() + 1e-8)
         return sal
+
+
+class FocalLoss(nn.Module):
+    """Focal Loss for multi-class classification.
+
+    Implementation follows the common formulation:
+      FL(pt) = -alpha * (1-pt)^gamma * log(pt)
+    where pt is the model probability for the true class.
+    """
+    def __init__(self, gamma=2.0, alpha=None, reduction='mean', weight=None):
+        super().__init__()
+        self.gamma = gamma
+        self.reduction = reduction
+        # alpha can be None, a scalar, or a tensor/list of per-class weights
+        if alpha is not None:
+            if isinstance(alpha, (list, tuple, np.ndarray)):
+                self.alpha = torch.tensor(alpha, dtype=torch.float)
+            else:
+                try:
+                    self.alpha = torch.tensor([alpha], dtype=torch.float)
+                except Exception:
+                    self.alpha = None
+        else:
+            self.alpha = None
+        # allow passing class weights as PyTorch 'weight' used in CE internally
+        self.weight = weight
+
+    def forward(self, inputs, targets):
+        # inputs: (B, C), targets: (B,)
+        ce_loss = nn.functional.cross_entropy(inputs, targets, weight=self.weight, reduction='none')
+        pt = torch.exp(-ce_loss)
+        focal_term = (1 - pt) ** self.gamma
+        loss = focal_term * ce_loss
+
+        if self.alpha is not None:
+            # convert alpha to device and index by target class
+            if self.alpha.numel() == 1:
+                a = self.alpha.to(inputs.device)
+                loss = a * loss
+            else:
+                a = self.alpha.to(inputs.device)[targets]
+                loss = a * loss
+
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:
+            return loss
 
 def get_model(model_name, device):
     print(f"\nInitializing {model_name}...")
@@ -599,12 +676,16 @@ def get_anatomical_ranking(sub_id, binary_mask_3d):
     return df_raw, df_norm
 
 # Helper function to get predictions for a given dataloader
-def get_predictions(model, loader, device):
+def get_predictions(model, loader, device, use_amp=False):
     t_true, t_probs, t_ids = [], [], []
+    amp_enabled = bool(use_amp and device.type == "cuda")
     with torch.no_grad():
         for batch in loader:
             t_true.extend(batch["label"].numpy())
-            t_probs.extend(torch.softmax(model(batch["image"].to(device)), dim=1)[:, 1].cpu().numpy())
+            inputs = batch["image"].to(device, non_blocking=True)
+            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=amp_enabled):
+                logits = model(inputs)
+            t_probs.extend(torch.softmax(logits, dim=1)[:, 1].cpu().numpy())
             t_ids.extend(batch["sub_id"])
     return np.array(t_true), np.array(t_probs), np.array(t_ids)
 
@@ -631,7 +712,11 @@ def main():
 
     pin_memory = torch.cuda.is_available()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    amp_enabled = bool(USE_AMP and device.type == "cuda")
+    scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
     print(f"Using device: {device}")
+    if amp_enabled:
+        print("AMP enabled: using mixed precision on CUDA")
 
     # create run directory immediately so checkpoints go there
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -666,14 +751,65 @@ def main():
     sites_array   = np.array(sites)
     sub_ids_array = np.array(sub_ids)
 
+    if AUG_PRESET == "conservative":
+        aug_cfg = {
+            "affine_prob": AUG_AFFINE_PROB,
+            "affine_rotate": AUG_AFFINE_ROTATE,
+            "affine_translate": AUG_AFFINE_TRANSLATE,
+            "noise_prob": AUG_NOISE_PROB,
+            "noise_std": AUG_NOISE_STD,
+            "smooth_prob": AUG_SMOOTH_PROB,
+            "smooth_sigma": AUG_SMOOTH_SIGMA,
+            "flip_prob": 0.0,
+            "int_scale_prob": 0.0,
+            "int_scale_factors": 0.0,
+            "int_shift_prob": 0.0,
+            "int_shift_offsets": 0.0,
+        }
+    elif AUG_PRESET == "strong":
+        aug_cfg = {
+            "affine_prob": 0.65,
+            "affine_rotate": (0.10, 0.10, 0.10),
+            "affine_translate": (6, 6, 6),
+            "noise_prob": 0.4,
+            "noise_std": 0.06,
+            "smooth_prob": 0.3,
+            "smooth_sigma": (0.4, 0.8),
+            "flip_prob": 0.2,
+            "int_scale_prob": 0.3,
+            "int_scale_factors": 0.15,
+            "int_shift_prob": 0.3,
+            "int_shift_offsets": 0.1,
+        }
+    else:
+        aug_cfg = {
+            "affine_prob": 0.5,
+            "affine_rotate": (0.06, 0.06, 0.06),
+            "affine_translate": (4, 4, 4),
+            "noise_prob": 0.3,
+            "noise_std": 0.04,
+            "smooth_prob": 0.2,
+            "smooth_sigma": (0.3, 0.6),
+            "flip_prob": 0.1,
+            "int_scale_prob": 0.2,
+            "int_scale_factors": 0.1,
+            "int_shift_prob": 0.2,
+            "int_shift_offsets": 0.05,
+        }
+
+    print(f"Using augmentation preset: {AUG_PRESET}")
+
     train_transforms = Compose([
         LoadImaged(keys=["image"]),
         EnsureChannelFirstd(keys=["image"]),
         Resized(keys=["image"], spatial_size=TARGET_SIZE, mode="trilinear"),
         NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
-        RandAffined(keys=["image"], prob=AUG_AFFINE_PROB, rotate_range=AUG_AFFINE_ROTATE, translate_range=AUG_AFFINE_TRANSLATE),
-        RandGaussianNoised(keys=["image"], prob=AUG_NOISE_PROB, mean=0.0, std=AUG_NOISE_STD),
-        RandGaussianSmoothd(keys=["image"], prob=AUG_SMOOTH_PROB, sigma_x=AUG_SMOOTH_SIGMA, sigma_y=AUG_SMOOTH_SIGMA, sigma_z=AUG_SMOOTH_SIGMA),
+        RandAffined(keys=["image"], prob=aug_cfg["affine_prob"], rotate_range=aug_cfg["affine_rotate"], translate_range=aug_cfg["affine_translate"]),
+        RandGaussianNoised(keys=["image"], prob=aug_cfg["noise_prob"], mean=0.0, std=aug_cfg["noise_std"]),
+        RandGaussianSmoothd(keys=["image"], prob=aug_cfg["smooth_prob"], sigma_x=aug_cfg["smooth_sigma"], sigma_y=aug_cfg["smooth_sigma"], sigma_z=aug_cfg["smooth_sigma"]),
+        RandFlipd(keys=["image"], prob=aug_cfg["flip_prob"], spatial_axis=0),
+        RandScaleIntensityd(keys=["image"], prob=aug_cfg["int_scale_prob"], factors=aug_cfg["int_scale_factors"]),
+        RandShiftIntensityd(keys=["image"], prob=aug_cfg["int_shift_prob"], offsets=aug_cfg["int_shift_offsets"]),
         EnsureTyped(keys=["image"]),
     ])
 
@@ -727,11 +863,11 @@ def main():
     # Note: Setting shuffle=False for train evaluate later is needed to keep IDs aligned, 
     # but sampler handles training order. We'll create a sequential eval loader for train later.
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, sampler=sampler, num_workers=NUM_WORKERS, pin_memory=pin_memory)
-    val_loader   = DataLoader(val_ds, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, pin_memory=pin_memory)
-    test_loader  = DataLoader(test_ds, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, pin_memory=pin_memory)
+    val_loader   = DataLoader(val_ds, batch_size=EVAL_BATCH_SIZE, num_workers=NUM_WORKERS, pin_memory=pin_memory)
+    test_loader  = DataLoader(test_ds, batch_size=EVAL_BATCH_SIZE, num_workers=NUM_WORKERS, pin_memory=pin_memory)
 
     # Eval loader for the training set (no shuffling/sampler to easily map IDs)
-    train_eval_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=pin_memory)
+    train_eval_loader = DataLoader(train_ds, batch_size=EVAL_BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=pin_memory)
 
     # [5] Training
     model        = get_model(CHOSEN_MODEL, device)
@@ -740,14 +876,47 @@ def main():
     for name, _ in model.named_modules():
         print(name)
     
-    if USE_CLASS_WEIGHTS:
+    # Configure loss function based on LOSS_TYPE
+    # Compute class weights if requested or required by selected loss
+    cw = None
+    if USE_CLASS_WEIGHTS or LOSS_TYPE.lower() in ("weighted_cross_entropy", "focal"):
         class_counts_all = np.bincount(labels_array)
         cw = torch.tensor(1.0 / class_counts_all, dtype=torch.float).to(device)
         cw = cw / cw.sum()  # normalise so weights sum to 1
+        print(f"Computed class weights: {cw.cpu().numpy()} (Control={cw[0]:.4f}, ADHD={cw[1]:.4f})")
+
+    if LOSS_TYPE.lower() == 'weighted_cross_entropy':
+        if cw is None:
+            class_counts_all = np.bincount(labels_array)
+            cw = torch.tensor(1.0 / class_counts_all, dtype=torch.float).to(device)
+            cw = cw / cw.sum()
         loss_fn = nn.CrossEntropyLoss(weight=cw)
-        print(f"Using class weights: {cw.cpu().numpy()} (Control={cw[0]:.4f}, ADHD={cw[1]:.4f})")
+        print("Using Weighted CrossEntropyLoss with computed class weights.")
+    elif LOSS_TYPE.lower() == 'focal':
+        # Use class weights as the 'weight' argument to CE inside focal loss
+        weight_arg = cw if cw is not None else None
+        # If FOCAL_ALPHA is provided as a scalar for binary tasks, convert to per-class alpha
+        focal_alpha = None
+        if FOCAL_ALPHA is not None:
+            if isinstance(FOCAL_ALPHA, (list, tuple, np.ndarray)):
+                focal_alpha = FOCAL_ALPHA
+            else:
+                # scalar alpha -> apply to positive class (index 1) for binary
+                if NUM_CLASSES == 2:
+                    focal_alpha = [1.0 - float(FOCAL_ALPHA), float(FOCAL_ALPHA)]
+                else:
+                    # replicate scalar across classes
+                    focal_alpha = [float(FOCAL_ALPHA)] * NUM_CLASSES
+
+        loss_fn = FocalLoss(gamma=FOCAL_GAMMA, alpha=focal_alpha, weight=weight_arg)
+        print(f"Using FocalLoss (gamma={FOCAL_GAMMA}, alpha={FOCAL_ALPHA}).")
     else:
-        loss_fn = nn.CrossEntropyLoss() 
+        # default: plain CrossEntropy
+        if cw is not None and USE_CLASS_WEIGHTS:
+            loss_fn = nn.CrossEntropyLoss(weight=cw)
+            print("Using CrossEntropyLoss with class weights (USE_CLASS_WEIGHTS=True).")
+        else:
+            loss_fn = nn.CrossEntropyLoss()
            
     if CHOSEN_MODEL == "BrainIAC" and (BRAINIAC_UNFREEZE_MODE != "linear_probe"):
         optimizer = torch.optim.AdamW([
@@ -778,20 +947,29 @@ def main():
         model.train()
         train_loss = 0.0
         for batch in train_loader:
-            inputs, lbls = batch["image"].to(device), batch["label"].to(device)
-            optimizer.zero_grad()
-            loss = loss_fn(model(inputs), lbls)
-            loss.backward()
-            optimizer.step()
+            inputs = batch["image"].to(device, non_blocking=True)
+            lbls = batch["label"].to(device, non_blocking=True)
+            optimizer.zero_grad(set_to_none=True)
+            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=amp_enabled):
+                logits = model(inputs)
+                loss = loss_fn(logits, lbls)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             train_loss += loss.item()
 
         model.eval()
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
         y_true, y_probs = [], []
         with torch.no_grad():
             for batch in val_loader:
-                v_inputs, v_labels = batch["image"].to(device), batch["label"].to(device)
+                v_inputs = batch["image"].to(device, non_blocking=True)
+                v_labels = batch["label"].to(device, non_blocking=True)
                 y_true.extend(v_labels.cpu().numpy())
-                y_probs.extend(torch.softmax(model(v_inputs), dim=1)[:, 1].cpu().numpy())
+                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=amp_enabled):
+                    v_logits = model(v_inputs)
+                y_probs.extend(torch.softmax(v_logits, dim=1)[:, 1].cpu().numpy())
 
         try: auc = roc_auc_score(y_true, y_probs)
         except ValueError: auc = 0.5
@@ -884,6 +1062,7 @@ def main():
         # Advanced Training Options
         "USE_CACHE_DATASET": USE_CACHE_DATASET,
         "FIND_OPTIMAL_THRESHOLD": FIND_OPTIMAL_THRESHOLD,
+        "THRESHOLD_TUNING_METRIC": THRESHOLD_TUNING_METRIC,
         "EARLY_STOPPING_PATIENCE": EARLY_STOPPING_PATIENCE,
         "SCHEDULER_TYPE": SCHEDULER_TYPE,
         "SCHEDULER_PATIENCE": SCHEDULER_PATIENCE,
@@ -891,6 +1070,7 @@ def main():
         "USE_CLASS_WEIGHTS": USE_CLASS_WEIGHTS,
 
         # Augmentation
+        "AUG_PRESET": AUG_PRESET,
         "AUG_AFFINE_PROB": AUG_AFFINE_PROB,
         "AUG_AFFINE_ROTATE": AUG_AFFINE_ROTATE,
         "AUG_AFFINE_TRANSLATE": AUG_AFFINE_TRANSLATE,
@@ -898,11 +1078,14 @@ def main():
         "AUG_NOISE_STD": AUG_NOISE_STD,
         "AUG_SMOOTH_PROB": AUG_SMOOTH_PROB,
         "AUG_SMOOTH_SIGMA": AUG_SMOOTH_SIGMA,
+        "AUG_PRESET_CONFIG": aug_cfg,
 
         # Training
         "EPOCHS": EPOCHS,
         "BATCH_SIZE": BATCH_SIZE,
+        "EVAL_BATCH_SIZE": EVAL_BATCH_SIZE,
         "NUM_WORKERS": NUM_WORKERS,
+        "USE_AMP": USE_AMP,
         "LEARNING_RATE": LEARNING_RATE,
         "WEIGHT_DECAY": WEIGHT_DECAY,
         "SCHEDULER_T_MAX": SCHEDULER_T_MAX,
@@ -983,32 +1166,77 @@ def main():
     print("\nExtracting final predictions for Train, Val, and Test sets...")
     
     # 1. Evaluate Train Set
-    train_true, train_probs, train_ids_arr = get_predictions(model, train_eval_loader, device)
-    train_preds = (train_probs > 0.5).astype(int)
-    pd.DataFrame({"sub_id": train_ids_arr, "true_label": train_true, "pred_prob": train_probs, "pred_label": train_preds}).to_csv(os.path.join(run_dir, "train_predictions.csv"), index=False)
-    plot_output_histogram(train_true, train_probs, os.path.join(run_dir, "train_histogram.png"), "Training Set Predictions")
+    train_true, train_probs, train_ids_arr = get_predictions(model, train_eval_loader, device, use_amp=amp_enabled)
 
     # 2. Evaluate Val Set
-    val_true, val_probs, val_ids_arr = get_predictions(model, val_loader, device)
+    val_true, val_probs, val_ids_arr = get_predictions(model, val_loader, device, use_amp=amp_enabled)
+    threshold_method = "default_0.5"
+    threshold_score = None
     
     if FIND_OPTIMAL_THRESHOLD:
-        fpr, tpr, thresholds = roc_curve(val_true, val_probs)
-        youden_j = tpr - fpr
-        optimal_threshold = thresholds[np.argmax(youden_j)]
-        print(f"Optimal Threshold found via Youden's J: {optimal_threshold:.4f}")
+        if len(np.unique(val_true)) < 2:
+            optimal_threshold = 0.5
+            print("Validation set has a single class; falling back to threshold: 0.5")
+        else:
+            metric_name = THRESHOLD_TUNING_METRIC.strip().lower()
+
+            if metric_name == "f1":
+                candidate_thresholds = np.unique(np.clip(val_probs, 0.0, 1.0))
+                candidate_thresholds = np.concatenate(([0.0], candidate_thresholds, [1.0]))
+
+                best_score = -1.0
+                best_threshold = 0.5
+                for thr in candidate_thresholds:
+                    preds_thr = (val_probs >= thr).astype(int)
+                    score = f1_score(val_true, preds_thr, zero_division=0)
+                    if score > best_score:
+                        best_score = score
+                        best_threshold = float(thr)
+
+                optimal_threshold = float(np.clip(best_threshold, 0.0, 1.0))
+                threshold_method = "f1"
+                threshold_score = float(best_score)
+                print(f"Optimal Threshold via F1: {optimal_threshold:.4f} (F1={threshold_score:.4f})")
+            else:
+                fpr, tpr, thresholds = roc_curve(val_true, val_probs)
+                finite_mask = np.isfinite(thresholds)
+                thresholds = thresholds[finite_mask]
+                fpr = fpr[finite_mask]
+                tpr = tpr[finite_mask]
+
+                if len(thresholds) == 0:
+                    optimal_threshold = 0.5
+                    print("No finite ROC thresholds found; falling back to threshold: 0.5")
+                else:
+                    youden_j = tpr - fpr
+                    best_idx = int(np.argmax(youden_j))
+                    optimal_threshold = float(np.clip(thresholds[best_idx], 0.0, 1.0))
+                    threshold_method = "youden_j"
+                    threshold_score = float(youden_j[best_idx])
+                    print(f"Optimal Threshold via Youden's J: {optimal_threshold:.4f} (J={threshold_score:.4f})")
     else:
         optimal_threshold = 0.5
         print(f"Using default threshold: {optimal_threshold}")
 
-    val_preds = (val_probs > optimal_threshold).astype(int)
+    with open(os.path.join(run_dir, "selected_threshold.txt"), "w", encoding="utf-8") as f:
+        f.write(f"threshold={optimal_threshold:.6f}\n")
+        f.write(f"method={threshold_method}\n")
+        if threshold_score is not None:
+            f.write(f"score={threshold_score:.6f}\n")
+
+    train_preds = (train_probs >= optimal_threshold).astype(int)
+    pd.DataFrame({"sub_id": train_ids_arr, "true_label": train_true, "pred_prob": train_probs, "pred_label": train_preds}).to_csv(os.path.join(run_dir, "train_predictions.csv"), index=False)
+    plot_output_histogram(train_true, train_probs, os.path.join(run_dir, "train_histogram.png"), "Training Set Predictions")
+
+    val_preds = (val_probs >= optimal_threshold).astype(int)
     pd.DataFrame({"sub_id": val_ids_arr, "true_label": val_true, "pred_prob": val_probs, "pred_label": val_preds}).to_csv(os.path.join(run_dir, "val_predictions.csv"), index=False)
     plot_output_histogram(val_true, val_probs, os.path.join(run_dir, "val_histogram.png"), "Validation Set Predictions")
 
     # 3. Evaluate Test Set
-    t_true, t_probs, t_ids_arr = get_predictions(model, test_loader, device)
+    t_true, t_probs, t_ids_arr = get_predictions(model, test_loader, device, use_amp=amp_enabled)
     
     # Apply the threshold we just calculated (or defaulted to 0.5)
-    t_preds = (t_probs > optimal_threshold).astype(int)
+    t_preds = (t_probs >= optimal_threshold).astype(int)
     test_auc = roc_auc_score(t_true, t_probs)
     test_acc = np.mean(t_preds == t_true)
     
