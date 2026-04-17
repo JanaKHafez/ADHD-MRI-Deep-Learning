@@ -18,7 +18,7 @@ RUNS_DIR           = "runs"
 # Pretrained Weight Paths: Paths to locally downloaded checkpoint files.
 # Using pre-trained weights (Transfer Learning) significantly reduces training
 # time and improves accuracy on smaller medical datasets.
-WEIGHT_PATH   = r"pretrained_models\BrainIAC.ckpt"
+WEIGHT_PATH   = r"pretrained_models\resnet_18.pth"
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 # CHOSEN_MODEL: Toggles the neural network architecture.
@@ -28,7 +28,7 @@ WEIGHT_PATH   = r"pretrained_models\BrainIAC.ckpt"
 # - "SFCN": Simple Fully Convolutional Network (specialised for brain age/classification).
 # - "AnatCL": Contrastive learning model pre-trained on diverse brain MRIs.
 # - "BrainIAC": ViT-B foundation model pre-trained on 32,000 brain MRIs.
-CHOSEN_MODEL       = "BrainIAC"  
+CHOSEN_MODEL       = "ResNet18"  
 
 # NUM_CLASSES: Binary classification (0 = Control/TD, 1 = ADHD).
 NUM_CLASSES        = 2
@@ -58,7 +58,7 @@ HOLDOUT_SITE       = "NeuroIMAGE"  # The site name to hold out (must match the '
 # ── Advanced Training Options ─────────────────────────────────────────────────
 # USE_CACHE_DATASET: If True, MONAI will load all MRIs into RAM on the first epoch.
 # Massively speeds up training, but requires a lot of System RAM (32GB+ recommended).
-USE_CACHE_DATASET       = True      
+USE_CACHE_DATASET       = False      
 
 # FIND_OPTIMAL_THRESHOLD: If True, uses Youden's J statistic on the validation ROC
 # curve to find the best cut-off probability (instead of defaulting to > 0.5).
@@ -77,7 +77,7 @@ SCHEDULER_FACTOR        = 0.5        # Multiplier for the LR drop (e.g., halves 
 # SCHEDULER_T_MAX: The period of the cosine wave for the CosineAnnealingLR.
 # A smaller T_MAX means the learning rate will drop more rapidly and restart more often, 
 # which can help escape local minima but may require more epochs to converge.
-SCHEDULER_T_MAX  = 20        # Number of epochs for a full cosine cycle (Cosine).
+SCHEDULER_T_MAX  = 10        # Number of epochs for a full cosine cycle (Cosine).
 
 # USE_CLASS_WEIGHTS: If True, penalises misclassification of the minority class
 # more heavily by weighting the CrossEntropyLoss inversely to class frequency.
@@ -183,7 +183,7 @@ BRAINIAC_BACKBONE_LR    = 5e-6
 
 # ── Visualisation & Interpretability ──────────────────────────────────────────
 # HEATMAP_ALPHA: Transparency of the Grad-CAM overlay when plotting (0.0 to 1.0).
-HEATMAP_ALPHA    = 0.5
+HEATMAP_ALPHA    = 0.0
 # HEATMAP_CMAP: The color palette for the saliency map. "jet" goes from Blue (low importance) to Red (high importance).
 HEATMAP_CMAP     = "jet"
 # SAVE_DPI: Image resolution for saved plots. 150-300 is standard for publications.
