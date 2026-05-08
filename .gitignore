@@ -7,5 +7,6 @@ src/DL_3.ipynb
 src/DL.ipynb
 src/DL_original.ipynb
 runs/**/*.pth
+!runs/**_best/*.pth
 *.zip
 ADHD_BIDS/
