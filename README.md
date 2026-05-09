@@ -1,4 +1,4 @@
-# ADHD Classification from Structural MRI with Uncertainty Quantification
+# ADHD Classification from Structural MRI 
 
 Deep learning pipeline for ADHD classification from sMRI scans, featuring multiple model architectures and uncertainty estimation methods.
 
@@ -22,7 +22,7 @@ This repository implements end-to-end ADHD diagnosis classification using 3D bra
 - **`src/EDA.ipynb`** - Exploratory data analysis and statistics
 - **`src/site_diag.ipynb`** - Site-level diagnostics and class balance analysis
 - **`src/region_saliency.ipynb`** - Brain region importance visualization
-- **`src/Linear_SVM.ipynb`** - SVM baseline model
+- **`src/Linear_SVM.ipynb`** - SVM model
 - **`src/inference.ipynb`** - Model inference and prediction
 
 ### Training & Inference
@@ -135,9 +135,4 @@ Results are saved in `runs/` with standard outputs:
 - `metrics.csv` - Performance metrics
 - `summary.json` - Training summary
 
-## Citation
-
-If you use this work, please cite the ADHD200 dataset and relevant methods:
-- ADHD200: http://www.adhd200.org/
-- BrainIAC: [original paper]
-- EDL: Amini et al. (2020) "Uncertainty Quantification 360° in Deep Learning"
+Get-ChildItem -Path "b:\Uni materials\Spring 26\AML\Final Project\Code\ADHD-MRI-Deep-Learning\runs" -Recurse -Name "*.pth" | Head -20Get-ChildItem -Path "b:\Uni materials\Spring 26\AML\Final Project\Code\ADHD-MRI-Deep-Learning\runs" -Recurse -Name "*.pth" | Head -20

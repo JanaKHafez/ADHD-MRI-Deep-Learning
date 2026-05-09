@@ -1,0 +1,300 @@
+================================================================================
+ADHD CLASSIFICATION FROM STRUCTURAL MRI - INSTALLATION GUIDE
+================================================================================
+
+SYSTEM REQUIREMENTS
+================================================================================
+- Python 3.8 or higher
+- CUDA 11.8+ (for GPU support, optional but recommended)
+- At least 50GB free disk space (for data and models)
+- 16GB RAM minimum (32GB+ recommended)
+
+
+QUICK START (5 STEPS)
+================================================================================
+
+1. Clone Repository
+   git clone https://github.com/JanaKHafez/ADHD-MRI-Deep-Learning.git
+   cd ADHD-MRI-Deep-Learning
+
+2. Create Virtual Environment
+   python -m venv venv
+   # On Windows:
+   venv\Scripts\activate
+   # On macOS/Linux:
+   source venv/bin/activate
+
+3. Install Core Dependencies
+   pip install -r requirements.txt
+
+4. Install Segmentation Dependencies (Optional)
+   pip install -r segment_requirements.txt
+
+5. Download Data and Pretrained Models
+   See "DATA & MODELS" section below
+
+
+DETAILED INSTALLATION
+================================================================================
+
+STEP 1: Clone Repository
+--------
+git clone https://github.com/JanaKHafez/ADHD-MRI-Deep-Learning.git
+cd ADHD-MRI-Deep-Learning
+
+
+STEP 2: Create Virtual Environment (Recommended)
+--------
+Option A - venv (Python built-in):
+  python -m venv venv
+  venv\Scripts\activate          # Windows
+  source venv/bin/activate       # macOS/Linux
+
+Option B - conda (if you have Anaconda installed):
+  conda create -n adhd_mri python=3.10
+  conda activate adhd_mri
+
+
+STEP 3: Install Python Dependencies
+--------
+Core packages (required for training/inference):
+  pip install -r requirements.txt
+
+Key packages installed:
+  - torch>=2.0.0
+  - monai[all]>=1.2.0
+  - torchvision
+  - nibabel>=5.0.0
+  - numpy>=1.23.0
+  - pandas>=1.5.0
+  - scikit-learn>=1.2.0
+  - matplotlib>=3.7.0
+  - tensorflow
+  - plotly
+  - seaborn
+
+Installation time: 5-15 minutes depending on internet speed
+
+
+STEP 4: Install Segmentation Dependencies (Optional)
+--------
+Only required if using SynthSeg for brain segmentation:
+  pip install -r segment_requirements.txt
+
+Additional packages:
+  - torchio>=0.18.90
+  - scikit-image
+  - imageio
+
+
+STEP 5: GPU Support (Optional but Recommended)
+--------
+If you have NVIDIA GPU and want GPU acceleration:
+
+Check CUDA version:
+  nvidia-smi
+
+Install PyTorch with CUDA support (replace 11.8 with your CUDA version):
+  pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+Verify GPU is available:
+  python -c "import torch; print(torch.cuda.is_available())"
+
+
+DATA & MODELS
+================================================================================
+
+STEP 1: Download ADHD200 Dataset
+--------
+The ADHD200 dataset is publicly available but large (~500GB preprocessed)
+
+Option A - Download via Script:
+  python prepare_adhd_bids.py --download
+
+Option B - Manual Download:
+  1. Visit: http://www.adhd200.org/
+  2. Register for access
+  3. Download preprocessed images (NIFTI format)
+  4. Place in directory: ADHD_BIDS/
+
+Dataset structure should be:
+  ADHD_BIDS/
+  ├── sub-001/
+  │   └── anat/
+  │       └── sub-001_T1w.nii.gz
+  ├── sub-002/
+  ├── participants.tsv
+  └── ...
+
+STEP 2: Prepare Data
+--------
+Convert to BIDS format and create metadata:
+  python prepare_adhd_bids.py
+
+This creates:
+  - ADHD_BIDS/participants.tsv (subject metadata)
+  - Standardized directory structure
+
+
+STEP 3: Download Pretrained Models
+--------
+Models are included in pretrained_models/ directory:
+  - resnet_18.pth (ResNet18 weights)
+  - resnet_50.pth (ResNet50 weights)
+  - SFCN_age.p (SFCN age prediction)
+  - SFCN_sex.p (SFCN sex prediction)
+  - BrainIAC*.ckpt (BrainIAC model checkpoints)
+
+If missing, download manually:
+  https://github.com/JanaKHafez/ADHD-MRI-Deep-Learning/releases/download/v1.0/pretrained_models.zip
+  
+  Then extract:
+    unzip pretrained_models.zip -d .
+
+
+VERIFICATION
+================================================================================
+
+Test Installation:
+  1. Check Python packages:
+     pip list | grep -E "torch|monai|nibabel"
+
+  2. Test PyTorch:
+     python -c "import torch; print(f'PyTorch {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}')"
+
+  3. Test MONAI:
+     python -c "import monai; print(f'MONAI {monai.__version__}')"
+
+  4. Test data loading:
+     python -c "import nibabel as nib; print('Nibabel OK')"
+
+
+USAGE
+================================================================================
+
+1. Preprocess Data (if raw):
+   python src/sMRI_adhd_pipeline.py --bids-root ADHD_BIDS --mode preprocess
+
+2. Train Model:
+   python src/sMRI_adhd_pipeline.py --mode train --model resnet18
+
+3. Run Inference:
+   python src/evidential_deep_learning_simple.py --mode inference --split test
+
+4. Use Jupyter Notebooks:
+   jupyter notebook
+   # Open src/Dataset.ipynb, src/EDA.ipynb, etc.
+
+
+TROUBLESHOOTING
+================================================================================
+
+Problem: "ModuleNotFoundError: No module named 'torch'"
+Solution:
+  pip install --upgrade torch torchvision torchaudio
+
+Problem: "CUDA out of memory"
+Solution:
+  - Reduce batch size in config
+  - Use CPU: set DEVICE=cpu in scripts
+  - Reduce input image size
+
+Problem: "No such file or directory: ADHD_BIDS"
+Solution:
+  - Ensure data is downloaded and in correct location
+  - Run: python prepare_adhd_bids.py first
+
+Problem: "ImportError: cannot import name 'NIfTI'"
+Solution:
+  pip install --upgrade nibabel
+
+Problem: GPU not detected
+Solution:
+  - Check NVIDIA drivers: nvidia-smi
+  - Verify CUDA installation: nvcc --version
+  - Reinstall PyTorch with correct CUDA version
+
+
+DEPENDENCY LIST (CORE)
+================================================================================
+
+Core Dependencies:
+  torch>=2.0.0                    - Deep learning framework
+  torchvision                     - Computer vision utilities
+  monai[all]>=1.2.0              - Medical imaging toolkit
+  nibabel>=5.0.0                 - NIfTI file handling
+  numpy>=1.23.0                  - Numerical computing
+  pandas>=1.5.0                  - Data manipulation
+  scipy>=1.10.0                  - Scientific computing
+  scikit-learn>=1.2.0            - Machine learning
+  scikit-image                    - Image processing
+  matplotlib>=3.7.0              - Plotting
+  seaborn                         - Statistical visualization
+  plotly                          - Interactive plots
+  tensorboard>=2.12.0            - Training visualization
+  tensorflow                      - Alternative ML framework
+  imageio                         - Image I/O
+  torchaudio                      - Audio processing
+  kaleido                         - Static plot export
+
+Optional Dependencies:
+  torchio>=0.18.90               - Neuroimaging transforms (for SynthSeg)
+  kagglehub                       - Dataset download helper
+  jupyter                         - Notebook support
+
+
+ENVIRONMENT FILES (ALTERNATIVE SETUP)
+================================================================================
+
+For Anaconda Users - Create from YAML:
+  conda env create -f environment.yml
+  conda activate adhd_mri
+
+(environment.yml can be created with: conda export > environment.yml)
+
+
+DOCKER SETUP (OPTIONAL)
+================================================================================
+
+If Docker is available:
+  docker build -t adhd-mri .
+  docker run --gpus all -v $(pwd):/workspace adhd-mri
+
+
+SUPPORT & DOCUMENTATION
+================================================================================
+
+Documentation:
+  - README.md - Project overview and structure
+  - src/*.py - Individual module documentation
+  - src/*.ipynb - Jupyter notebooks with examples
+
+Issues:
+  https://github.com/JanaKHafez/ADHD-MRI-Deep-Learning/issues
+
+Citation:
+  If using this code, cite:
+  - ADHD200 dataset: http://www.adhd200.org/
+  - BrainIAC: [original paper]
+  - EDL: Amini et al. (2020)
+
+
+TOTAL INSTALLATION TIME
+================================================================================
+
+Minimal (CPU only):            15-30 minutes
+Standard (with GPU):           30-60 minutes
+Full (with data download):     2-3 hours (plus data download time)
+
+
+NEXT STEPS
+================================================================================
+
+After installation:
+  1. Read: README.md
+  2. Run: src/Dataset.ipynb (data exploration)
+  3. Run: src/EDA.ipynb (exploratory analysis)
+  4. Train: src/sMRI_adhd_pipeline.py
+  5. Evaluate: src/evidential_deep_learning_simple.py
+
+
