@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""
-MC Dropout Bayesian Inference for ADHD ResNet18
-
-Purpose
-- Approximate Bayesian Neural Network uncertainty using Monte Carlo (MC) Dropout.
-- Reuse an existing trained ResNet18 classifier without retraining.
-- Produce per-subject predictive mean, uncertainty, and uncertainty-aware metrics.
-
-Notes
-- Best results require a checkpoint trained with dropout layers in the classifier head.
-- If no fine-tuned checkpoint is found, this script can fall back to pretrained
-  MedicalNet weights, but those outputs are not task-calibrated for ADHD labels.
-"""
+"""MC Dropout Bayesian inference for uncertainty estimation."""
 
 from __future__ import annotations
 

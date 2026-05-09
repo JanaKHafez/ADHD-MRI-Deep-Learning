@@ -78,17 +78,7 @@ def parse_args() -> argparse.Namespace:
 
 
 class EDLHead(nn.Module):
-    """
-    Evidential Deep Learning head: learns Dirichlet parameters from predictions.
-
-    Input: [resnet_prob, brainiac_prob] (2D feature vector)
-    Output: alpha = exp(logits) + 1 (Dirichlet parameters, all >= 1)
-
-    Interpretation:
-      - S = sum(alpha)  (total strength / evidence)
-      - p = alpha / S  (subjective probability, analogous to softmax)
-      - Low alpha[i] => high uncertainty on class i
-    """
+    """Learns Dirichlet parameters from ensemble predictions."""
 
     def __init__(self, in_features: int = 2, num_classes: int = 2, hidden: int = 64):
         super().__init__()
@@ -101,14 +91,6 @@ class EDLHead(nn.Module):
         self.num_classes = num_classes
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            x: (B, 2) predictions from ResNet18 and BrainIAC
-
-        Returns:
-            alpha: (B, K) Dirichlet parameters (all >= 1)
-            p: (B, K) subjective probabilities (alpha / sum(alpha))
-        """
         logits = self.net(x)
         alpha = torch.exp(logits) + 1.0
         S = alpha.sum(dim=1, keepdim=True)
@@ -121,37 +103,12 @@ def edl_loss(
     target: torch.Tensor,
     lam: float = 0.0,
 ) -> torch.Tensor:
-    """
-    Evidential Deep Learning loss = KL(Dir(alpha) || Dir(1)) + lambda * reg
-
-    Args:
-        alpha: (B, K) Dirichlet parameters
-        target: (B,) integer class labels
-        lam: regularization coefficient
-
-    Returns:
-        loss: scalar tensor
-
-    Loss interpretation:
-      - KL divergence pushes predicted Dir toward uniform (high uncertainty)
-        when model is wrong (target_one_hot[i] = 0 but alpha[i] is high)
-      - Regularization penalizes overconfident wrong predictions
-    """
+    """EDL loss: KL divergence + regularization."""
     num_classes = alpha.size(1)
     device = alpha.device
 
     S = alpha.sum(dim=1)
     target_one_hot = F.one_hot(target, num_classes=num_classes).float().to(device)
-
-    # KL divergence: KL(Dir(alpha) || Dir(1))
-    # = log(Gamma(sum(alpha))) - sum(log(Gamma(alpha)))
-    #   - log(Gamma(sum(1))) + sum(log(Gamma(1)))
-    # = log(Gamma(S)) - sum(log(Gamma(alpha))) - log(Gamma(K)) + 0
-
-    log_beta_c = torch.log(alpha + 1e-10) - torch.log(S.unsqueeze(1) + 1e-10)
-
-    # Approximate KL using digamma
-    # KL ≈ sum_c [target_c * (log(alpha_c) - log(S)) + (1-target_c) * digamma_diff]
     digamma_S_np = digamma((S.detach().cpu().numpy()) + 1e-8)
     digamma_alpha_np = digamma((alpha.detach().cpu().numpy()) + 1e-8)
     digamma_diff = torch.tensor(
@@ -164,7 +121,7 @@ def edl_loss(
         dim=1
     ) - ((target_one_hot * digamma_diff).sum(dim=1))
 
-    # Regularization: penalize high alpha for wrong classes
+
     reg = (alpha - 1.0).sum(dim=1) * (1.0 - target_one_hot.sum(dim=1))
 
     loss = (kl + lam * reg).mean()
@@ -182,22 +139,11 @@ def load_predictions(run_dir: Path, split: str) -> pd.DataFrame:
 def merge_predictions(
     args: argparse.Namespace, split: str
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Merge ResNet18 and BrainIAC predictions by subject.
-
-    Returns:
-        features: (N, 2) array of [resnet_prob, brainiac_prob]
-        labels: (N,) array of true labels
-        sub_ids: (N,) array of subject IDs
-    """
     resnet_df = load_predictions(Path(args.resnet_run), split)
     brainiac_df = load_predictions(Path(args.brainiac_run), split)
 
-    # Index by subject ID
     resnet_idx = {str(row["sub_id"]): row for _, row in resnet_df.iterrows()}
     brainiac_idx = {str(row["sub_id"]): row for _, row in brainiac_df.iterrows()}
-
-    # Find common subjects
     common_subs = set(resnet_idx.keys()) & set(brainiac_idx.keys())
     print(f"Common subjects in {split}: {len(common_subs)}")
     if len(common_subs) == 0:
@@ -210,8 +156,6 @@ def merge_predictions(
     for sub_id in sorted(common_subs):
         r_row = resnet_idx[sub_id]
         b_row = brainiac_idx[sub_id]
-
-        # Verify labels match
         r_label = int(r_row["true_label"])
         b_label = int(b_row["true_label"])
         assert r_label == b_label, f"Label mismatch for {sub_id}: {r_label} vs {b_label}"
@@ -294,12 +238,6 @@ def train_edl(
 def infer_edl(
     model: EDLHead, X: torch.Tensor, y: np.ndarray, sub_ids: np.ndarray, device: torch.device
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Run inference and compute uncertainty metrics.
-
-    Returns:
-        y_true, sub_ids, mean_prob, aleatoric_std, epistemic_std, mutual_info
-    """
     model.eval()
     with torch.no_grad():
         alpha, p = model(X)
@@ -308,14 +246,12 @@ def infer_edl(
     probs = p.cpu().numpy()
     mean_prob = probs[:, 1]
 
-    # Aleatoric uncertainty (data noise)
-    # For binary: sqrt(p0 * p1 / (S + 1))
+
     S = alphas.sum(axis=1)
     p0, p1 = probs[:, 0], probs[:, 1]
     aleatoric = np.sqrt((p0 * p1) / (S + 1))
 
-    # Epistemic uncertainty (model uncertainty)
-    # Variance of the Dirichlet mean: Var[p1] = p1 * (1 - p1) / (S + 1)
+
     epistemic = np.sqrt((p1 * (1 - p1)) / (S + 1))
 
     # Mutual information (expected data entropy - expected model entropy)
@@ -325,12 +261,9 @@ def infer_edl(
         S_i = S[i]
         p_i = probs[i]
 
-        # Expected entropy: sum_c [p_c * (digamma(alpha_c) - digamma(S_c))]
         digamma_alpha = digamma(alpha_i + 1e-8)
         digamma_S = digamma(S_i + 1e-8)
         entropy_exp = -np.sum(p_i * (digamma_alpha - digamma_S))
-
-        # Variance entropy approximation
         var_exp = np.sum(p_i * (1 - p_i) / (S_i + 1))
 
         mutual_info[i] = entropy_exp - var_exp

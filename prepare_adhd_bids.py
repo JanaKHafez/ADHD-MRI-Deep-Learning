@@ -15,25 +15,20 @@ ADHD_ROOT = "ADHD_BIDS"
 OUTPUT_ROOT = "ADHD_BIDS"
 
 def merge_phenotypic_data():
-    """
-    Merge all site-specific phenotypic CSVs into a unified participants.tsv
-    """
+    """Merge phenotypic CSVs into unified participants.tsv."""
     print("[1] Merging phenotypic data from all sites...")
     
     all_data = []
     
-    # Find all phenotypic CSV files in ADHD_ROOT
     pheno_files = [f for f in os.listdir(ADHD_ROOT) 
                    if f.endswith("_phenotypic.csv") and "TestRelease" not in f]
-    
-    # Extract site names from filenames
     sites = [f.replace("_phenotypic.csv", "") for f in pheno_files]
     
     print(f"Found {len(sites)} sites: {sites}\n")
     
     for site, pheno_file in zip(sites, pheno_files):
         pheno_path = os.path.join(ADHD_ROOT, pheno_file)
-        print(f"  ✓ Reading {site}: {pheno_file}")
+        print(f"Reading {site}: {pheno_file}")
         
         try:
             df = pd.read_csv(pheno_path)
@@ -48,26 +43,21 @@ def merge_phenotypic_data():
         raise ValueError("No phenotypic data found!")
     merged_df = pd.concat(all_data, ignore_index=True, sort=False)
     
-    print(f"\n✓ Merged {len(merged_df)} total records from {len(all_data)} sites")
-    print(f"  Columns: {list(merged_df.columns)}\n")
+    print(f"Merged {len(merged_df)} records from {len(all_data)} sites")
     
     return merged_df
 
 def process_subjects(merged_df):
-    """
-    Process subjects and create BIDS-compliant folder structure
-    """
+    """Process subjects and create BIDS-compliant folder structure."""
     print("[2] Processing subjects and creating BIDS structure...")
     
     # Create output directory if needed
     os.makedirs(OUTPUT_ROOT, exist_ok=True)
     
-    # Standardize participant IDs
     if 'participant_id' not in merged_df.columns:
         if 'ScanDir ID' in merged_df.columns:
             merged_df['participant_id'] = merged_df['ScanDir ID'].astype(str)
         else:
-            # Try common alternatives
             id_cols = [c for c in merged_df.columns if 'id' in c.lower() or 'subject' in c.lower()]
             if id_cols:
                 merged_df['participant_id'] = merged_df[id_cols[0]]
@@ -75,10 +65,8 @@ def process_subjects(merged_df):
                 print("ERROR: Could not find participant ID column")
                 return None
     
-    # Standardize label column (DX is diagnosis column: 0=Control, 1=ADHD, others=other diagnoses)
     if 'label' not in merged_df.columns:
         if 'DX' in merged_df.columns:
-            # Convert numeric DX: 0=Control, 1=ADHD, rest=drop or convert to control
             merged_df['label'] = merged_df['DX'].apply(lambda x: 1 if x == 1 else 0)
         else:
             label_cols = [c for c in merged_df.columns if 'label' in c.lower() or 'diagnosis' in c.lower()]
@@ -88,7 +76,6 @@ def process_subjects(merged_df):
                 print("ERROR: Could not find diagnosis column")
                 return None
     
-    # Standardize age column
     if 'age' not in merged_df.columns:
         if 'Age' in merged_df.columns:
             merged_df['age'] = merged_df['Age']
@@ -97,7 +84,6 @@ def process_subjects(merged_df):
             if age_cols:
                 merged_df['age'] = merged_df[age_cols[0]]
     
-    # Standardize gender column
     if 'gender' not in merged_df.columns:
         if 'Gender' in merged_df.columns:
             merged_df['gender'] = merged_df['Gender']
@@ -117,22 +103,17 @@ def process_subjects(merged_df):
             if iq_cols:
                 merged_df['iq'] = merged_df[iq_cols[0]]
     
-    # Select standard columns
     standard_cols = ['participant_id', 'site', 'label', 'age', 'gender']
     if 'iq' in merged_df.columns:
         standard_cols.append('iq')
-    
-    # Only keep columns that exist
     export_cols = [c for c in standard_cols if c in merged_df.columns]
     participants_df = merged_df[export_cols].copy()
     
     # Remove duplicates by participant_id
     participants_df = participants_df.drop_duplicates(subset=['participant_id'], keep='first')
     
-    print(f"✓ Standardized {len(participants_df)} unique subjects")
-    print(f"  Columns: {export_cols}\n")
+    print(f"Standardized {len(participants_df)} unique subjects")
     
-    # Display summary
     print("Sample data:")
     print(participants_df.head(10))
     print(f"\nLabel distribution:")
@@ -143,25 +124,17 @@ def process_subjects(merged_df):
     return participants_df
 
 def save_participants_tsv(participants_df):
-    """
-    Save participants.tsv in BIDS format
-    """
+    """Save participants.tsv in BIDS format."""
     print("\n[3] Saving participants.tsv...")
     
     output_path = os.path.join(ADHD_ROOT, "participants.tsv")
     
-    # Save with tab separation
     participants_df.to_csv(output_path, sep="\t", index=False)
-    
-    print(f"✓ Saved {output_path}")
-    print(f"  Shape: {participants_df.shape}")
     
     return output_path
 
 def create_bids_anatomy_links():
-    """
-    Create symbolic links from BIDS structure to original data files
-    """
+    """Create symbolic links from BIDS structure to original data files."""
     print("\n[4] Creating BIDS-compliant anatomy links...")
     
     participants_path = os.path.join(ADHD_ROOT, "participants.tsv")

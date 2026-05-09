@@ -22,26 +22,17 @@ from torch.optim import Adam
 
 warnings.filterwarnings("ignore")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION
-# ══════════════════════════════════════════════════════════════════════════════
-
 RESNET_RUN = "runs/ResNet18_best"
 BRAINIAC_RUN = "runs/BrainIAC_best"
 RUNS_DIR = "runs"
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Training hyperparameters
 LR = 1e-3
 WEIGHT_DECAY = 1e-4
 EPOCHS = 200
 EARLY_STOP = 30
 SAVE_DPI = 150
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SET SEED
-# ══════════════════════════════════════════════════════════════════════════════
 
 def set_seed(seed=42):
     random.seed(seed)
@@ -51,10 +42,6 @@ def set_seed(seed=42):
         torch.cuda.manual_seed_all(seed)
 
 set_seed(42)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# GATING NETWORK
-# ══════════════════════════════════════════════════════════════════════════════
 
 class GatingNetwork(nn.Module):
     def __init__(self, n_input):
@@ -69,10 +56,6 @@ class GatingNetwork(nn.Module):
     def forward(self, x):
         logits = self.net(x)
         return torch.softmax(logits, dim=1)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# METRICS HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
 
 def sensitivity(y_true, y_pred):
     cm = confusion_matrix(y_true, y_pred)
@@ -90,27 +73,17 @@ def specificity(y_true, y_pred):
     tn, fp, fn, tp = cm.ravel()
     return tn / (tn + fp) if (tn + fp) > 0 else 0.0
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ══════════════════════════════════════════════════════════════════════════════
-
 def main():
-    print("=" * 80)
-    print("SIMPLIFIED ATTENTION FUSION - GATING NETWORK TRAINING")
-    print("=" * 80)
-    print(f"\nDevice: {DEVICE}\n")
+    print("Training attention fusion gating network")
+    print(f"Device: {DEVICE}")
     
     # Create output directory
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_dir = os.path.join(RUNS_DIR, f"attention_fusion_{run_timestamp}")
     os.makedirs(output_dir, exist_ok=True)
-    print(f"Output: {output_dir}\n")
+    print(f"Output: {output_dir}")
     
-    # ══════════════════════════════════════════════════════════════════════════
-    # Load predictions
-    # ══════════════════════════════════════════════════════════════════════════
-    
-    print("[1] Loading predictions...")
+    print("\nLoading predictions...")
     
     # Load all predictions
     resnet_train = pd.read_csv(os.path.join(RESNET_RUN, "train_predictions.csv")).set_index("sub_id")
@@ -121,15 +94,9 @@ def main():
     brainiac_val = pd.read_csv(os.path.join(BRAINIAC_RUN, "val_predictions.csv")).set_index("sub_id")
     brainiac_test = pd.read_csv(os.path.join(BRAINIAC_RUN, "test_predictions.csv")).set_index("sub_id")
     
-    print(f"  Train: {len(resnet_train)} subjects")
-    print(f"  Val:   {len(resnet_val)} subjects")
-    print(f"  Test:  {len(resnet_test)} subjects\n")
+    print(f"  Train: {len(resnet_train)} subjects, Val: {len(resnet_val)}, Test: {len(resnet_test)}")
     
-    # ══════════════════════════════════════════════════════════════════════════
-    # Prepare features (simplest case: just the two probabilities)
-    # ══════════════════════════════════════════════════════════════════════════
-    
-    print("[2] Preparing features...")
+    print("\nPreparing features...")
     
     # Use just the two model probabilities as features
     X_train = np.column_stack([
@@ -151,7 +118,6 @@ def main():
     y_test = resnet_test["true_label"].values
     sub_ids_test = resnet_test.index.values
     
-    # Normalize features
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_val_scaled = scaler.transform(X_val)
@@ -161,11 +127,7 @@ def main():
     print(f"  Val shape:   {X_val_scaled.shape}")
     print(f"  Test shape:  {X_test_scaled.shape}\n")
     
-    # ══════════════════════════════════════════════════════════════════════════
-    # Train gating network
-    # ══════════════════════════════════════════════════════════════════════════
-    
-    print("[3] Training gating network...")
+    print("\nTraining gating network...")
     
     model = GatingNetwork(n_input=2).to(DEVICE)
     optimizer = Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
@@ -184,18 +146,15 @@ def main():
         model.train()
         optimizer.zero_grad()
         
-        # Forward pass with proper tensor operations
         weights = model(X_train_t)  # (N, 2)
         p_resnet_t = torch.tensor(X_train[:, 0], dtype=torch.float32).to(DEVICE)
         p_brainiac_t = torch.tensor(X_train[:, 1], dtype=torch.float32).to(DEVICE)
         p_fused = weights[:, 0] * p_resnet_t + weights[:, 1] * p_brainiac_t
         
-        # Loss
         loss = criterion(p_fused, y_train_t)
         loss.backward()
         optimizer.step()
         
-        # Validation
         model.eval()
         with torch.no_grad():
             weights_val = model(X_val_t)
@@ -222,17 +181,12 @@ def main():
             print(f"  Early stop at epoch {epoch+1}")
             break
     
-    # Load best model
     if best_state is not None:
         model.load_state_dict(best_state)
     
-    print(f"\n  Best Val AUC: {best_auc:.4f}\n")
+    print(f"\nBest Val AUC: {best_auc:.4f}")
     
-    # ══════════════════════════════════════════════════════════════════════════
-    # Evaluate on test set
-    # ══════════════════════════════════════════════════════════════════════════
-    
-    print("[4] Evaluating on test set...")
+    print("\nEvaluating on test set...")
     
     model.eval()
     X_test_t = torch.tensor(X_test_scaled, dtype=torch.float32).to(DEVICE)
@@ -241,14 +195,10 @@ def main():
         weights_test = model(X_test_t)
         w_resnet = weights_test[:, 0].cpu().numpy()
         w_brainiac = weights_test[:, 1].cpu().numpy()
-        
-        p_resnet_test = X_test[:, 0]
-        p_brainiac_test = X_test[:, 1]
         p_fused_test = w_resnet * p_resnet_test + w_brainiac * p_brainiac_test
     
     y_pred_test = (p_fused_test > 0.5).astype(int)
     
-    # Metrics
     test_auc = roc_auc_score(y_test, p_fused_test)
     test_acc = accuracy_score(y_test, y_pred_test)
     test_sens = sensitivity(y_test, y_pred_test)
@@ -261,13 +211,8 @@ def main():
     print(f"  Test Specificity: {test_spec:.4f}")
     print(f"  Test F1 Score:   {test_f1:.4f}\n")
     
-    # ══════════════════════════════════════════════════════════════════════════
-    # Save results
-    # ══════════════════════════════════════════════════════════════════════════
+    print("\nSaving results...")
     
-    print("[5] Saving results...")
-    
-    # Predictions CSV
     results_df = pd.DataFrame({
         "sub_id": sub_ids_test,
         "true_label": y_test,
@@ -278,7 +223,6 @@ def main():
     })
     results_df.to_csv(os.path.join(output_dir, "test_predictions.csv"), index=False)
     
-    # Metrics CSV
     metrics_df = pd.DataFrame([{
         "variant": "gating_network",
         "AUC": test_auc,
@@ -289,7 +233,6 @@ def main():
     }])
     metrics_df.to_csv(os.path.join(output_dir, "metrics.csv"), index=False)
     
-    # Confusion matrix
     fig, ax = plt.subplots(figsize=(8, 6), facecolor="white")
     cm = confusion_matrix(y_test, y_pred_test)
     disp = ConfusionMatrixDisplay(cm, display_labels=["Control", "ADHD"])
@@ -299,7 +242,6 @@ def main():
     fig.savefig(os.path.join(output_dir, "confusion_matrix.png"), dpi=SAVE_DPI)
     plt.close()
     
-    # ROC curve
     fpr, tpr, _ = roc_curve(y_test, p_fused_test)
     fig, ax = plt.subplots(figsize=(8, 6), facecolor="white")
     ax.plot(fpr, tpr, label=f"Gating Network (AUC={test_auc:.3f})", linewidth=2)
@@ -313,7 +255,6 @@ def main():
     fig.savefig(os.path.join(output_dir, "roc_curve.png"), dpi=SAVE_DPI)
     plt.close()
     
-    # Weights by label
     fig, ax = plt.subplots(figsize=(8, 6), facecolor="white")
     control_w_resnet = w_resnet[y_test == 0].mean()
     control_w_brainiac = w_brainiac[y_test == 0].mean()
@@ -334,7 +275,6 @@ def main():
     fig.savefig(os.path.join(output_dir, "weights_by_label.png"), dpi=SAVE_DPI)
     plt.close()
     
-    # Hyperparameters
     hyper = {
         "timestamp": run_timestamp,
         "device": str(DEVICE),
@@ -347,11 +287,7 @@ def main():
     with open(os.path.join(output_dir, "hyperparameters.json"), "w") as f:
         json.dump(hyper, f, indent=4)
     
-    print(f"\n  Results saved to {output_dir}\n")
-    
-    print("=" * 80)
-    print("TRAINING COMPLETE")
-    print("=" * 80)
+    print(f"\nResults saved to {output_dir}")
 
 if __name__ == "__main__":
     main()
